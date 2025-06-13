@@ -9,8 +9,14 @@
 //  HP-IL In ------------------^- 59 Ohm -- ILON
 // (Ref: left)
 
-
-//
+// Output is ~3.5 Vp-p, no load;
+// ILIP --> AIN1::Vbg (1.1V) and PINB (2.5V)
+// Read ACO and PINB
+//       1       1     Hi
+//       1       0     Idle
+//       0       0     Lo
+// other end to (1.1 + 2.5) / 2 = 1.8V
+// 100 Ohm termination OK?
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -31,22 +37,22 @@ void toggle() {
 void idle() {
   __builtin_avr_delay_cycles(PULSE_CYCLES - CALL_CYCLES - 1);
   PORTB &= ~(ILOP | ILON);   // PORTB.OUTCLR = ILOP | ILON
-  __builtin_avr_delay_cycles(2 * PULSE_CYCLES - RET_CYCLES - 1);
+  __builtin_avr_delay_cycles(2 * PULSE_CYCLES - 2 * RET_CYCLES - 1);
 }
 
-void data() {
+void dataBit() {
   toggle();
   idle();
 }
 
 void one() {
   PINB = ILOP;
-  data();
+  dataBit();
 }
 
 void zero() {
   PINB = ILON;
-  data();
+  dataBit();
 }
 
 void sync() {
@@ -73,55 +79,73 @@ void sendFrame(Frame cmd, uint8_t param = 0){
 	cmd.frameControl & CMD ? oneSync() : zeroSync();
 	cmd.frameControl & ENDcc ? one() : zero();
   cmd.frameControl & SRQ ? one() : zero();
-  for (int8_t i = 7; i >= 0; i--)
-		data & (1 << i) ? one() : zero();
+  for (int8_t i = 8; i--; ) {
+		data & 0x80 ? one() : zero();
+    data <<= 1;
+  }
 }
 
 void cmd(Frame cmd, uint8_t param = 0) {
   sendFrame(cmd, param);
-#if 1
-  __builtin_avr_delay_cycles(MF_CPU / 50);
-#else
-   sendFrame(RFC);
-  // TODO: wait for looped response  *****
-#endif
+
+  sendFrame(RFC);
+  // wait for ready response
+  for (uint8_t bits = 8; bits--;) {  // past sync
+    if (PINB & ILIP) // Hi
+      while (PINB & ILIP);
+    else if (!(ACSR & _BV(ACO))) // Lo  -- ? how fast is comparator -- no spec!!
+      while (!(ACSR & _BV(ACO)));
+    else ++bits; // idle - timeout
+  }
 }
 
 void sendStr(const char* str) {
   do cmd(DAB, *str); while (*++str);
-  cmd(EOT);
-
-  // ? END last character
+  cmd(END, '\n');
 }
 
-int main(void) {
-  DDRB = LED | ILOP | ILON;
 
-  cmd(REN);
-  cmd(AAD, 1);
-  cmd(LAD, 1);
-
-  // 3468
-  sendStr("D2" "TEST " __TIME__); // no lower case
-  // how terminate command??
-
-  // "Wn" - read SRAM byte (1024 nibbles)
-
+void done() {
+  DDRB |= LED;
   while (1) {
     PINB = LED;
     __builtin_avr_delay_cycles(MF_CPU / 4);
   }
+}
 
+int main(void) {
+  DDRB = ILOP | ILON;
+  PORTB |= ILIN;  // ~32K pullup for 1.8V; external pull down: 32K * (5 - 1.8)/1.8 ~ 56K
 
-  return 0;
+  ACSR = ACBG | ACI;
 
-  cmd(DDT);
-  cmd(DAB, 'W'); // read SRAM
-  cmd(END, 0);
+  cmd(REN);
+  cmd(AAD, 1);
+  cmd(LAD, 1);
+  cmd(DCL);
 
+  // 3468
+  while (1)
+    sendStr("D2" __TIME__); // no lower case
+
+  done();
+
+  // sendStr("D1F4");
+
+#if 0
+  // "B2"  binary cal constant out
+  // "Wn" - read SRAM byte (1024 nibbles)
+  cmd(DAB, 'W');
+  cmd(END, 1);
+  cmd(TAD, 1);
   cmd(SDA);
+#endif
 
-  return 0;
+  // listen
+
+  cmd(GTL);
+
+  done();
 
 }
 
