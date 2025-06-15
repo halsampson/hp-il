@@ -24,13 +24,38 @@ void incrSeconds() {
 
 void dumpCalibrationSRAM() { // TODO: figure out
   // "B2"  binary cal constant out (at each calibration Cn step?)  -- see bottom of unit
-  // "Wn" - read SRAM byte (1024 nibbles?) ?? 3478
+  send("Calibration data:\n");
 
   ilSendStr("B2");
-  for (uint8_t sramAddr = 0; sramAddr <= 15; sramAddr++) {
-    send(ilGetData()); send('\n');
+  for (uint8_t sramAddr = 0; sramAddr < 16; sramAddr++) {
+    const char* calData = ilGetData();
+    for (uint8_t p = 0; p < 16; ++p) {
+      punctuation = true;
+      sendHex((uint16_t)(calData[p] - 64)); // nibbles
+      if (p == 6) send(' ');
+    }
+    send('\n');
   }
-  /*
+
+/*
+ Calibration data:
+ 0000000 000000000
+ 9999986 F14B2EAC4
+ 9999998 F150EF258
+ 0000005 F0FFBFEF8
+ 0000000 F0030F3FF
+ 0001726 F14CFB0D0
+ 0000594 013113953
+ 0000057 01440A947
+ 0000006 013ECF9D7
+ 0000000 013D4F4D0
+ 9999999 013D1F8D0
+ 9999997 01DB4FB40
+ 0000016 F3203E4EB
+ 0000000 000000000
+ 0000000 000000000
+ 0000000 00000000F
+
 @@@@@@@@@@@@@@@@@
 IIIIIHFOADKBNJLDD
 IIIIIIHOAE@NOBEHH
@@ -47,10 +72,11 @@ IIIIIIG@AMKDOKD@@
 @@@@@@@@@@@@@@@@@
 @@@@@@@@@@@@@@@@@
 @@@@@@@@@@@@@@@
-  */
+*/
 
   // 3478A calibration data decoding:
   // See https://tomverbeure.github.io/2022/12/02/HP3478A-Multimeter-Calibration-Data-Backup-and-Battery-Replacement.html
+  // "Wn" - read SRAM byte (1024 nibbles)
 
 #if 0
   send("\nTrying W\n");
