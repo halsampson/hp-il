@@ -1,5 +1,6 @@
 // HP_IL
 
+// Device Output:
 // 100 Ohm matching / 1.5V attenuation network for 5V 23/27 Ohm ATtiny85 outputs:
 
 //  HP-IL In ------------------v- 59 Ohm -- ILOP
@@ -9,14 +10,15 @@
 //  HP-IL In ------------------^- 59 Ohm -- ILON
 // (Ref: left)
 
-// Output is ~3.5 Vp-p, no load;
-// ILIP --> AIN1::Vbg (1.1V) and PINB (2.5V)
-// Read ACO and PINB
-//       1       1     Hi
-//       1       0     Idle
-//       0       0     Lo
-// other end to (1.1 + 2.5) / 2 = 1.8V
-// 100 Ohm termination OK?
+// Device Input:
+//                       ILP  ILN  (~90 Ohms DC)
+//                        |     |
+//  Vcc -- 100 Ohms -->|---     ---- Gnd
+//                  |     |
+//                 P0    P1
+// (Ref: right)
+
+// ATtiny thresholds typ. 2.35V +/- 100 mV hysteresis
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -85,18 +87,89 @@ void sendFrame(Frame cmd, uint8_t param = 0){
   }
 }
 
+uint8_t dataBuf[256];
+uint8_t dataBufIdx;
+
+// P1  P0
+//  1   1  Hi
+//  0   1  Idle
+//  0   0  Lo
+
+inline uint8_t state() {
+  return PINB & (ILIH | ILIL);  // DIDR0 won't mask dWire PB5!!
+}
+
+const uint8_t Idle = 1;
+
+uint8_t lastCmd, lastParam;
+
+// Alternative: sample mid bit ?
+
+void recvFrame() {
+  uint8_t bits = 3 + 8;
+  uint8_t data;
+
+  uint16_t frameTimeout = 1;
+  while (state() == Idle && ++frameTimeout);
+  if (!frameTimeout) return;
+
+#if 0  // TEST sampling
+   uint8_t* pDataBuf = dataBuf;
+   uint8_t i = 0;
+   while (++i)
+     *pDataBuf++ = PINB;
+   return;
+#endif
+
+  while (1) {
+    uint8_t dataBit;
+    while (state() != Idle || state() != Idle);
+    data |= dataBit & 1;
+    if (!--bits) {
+      dataBuf[dataBufIdx++] = data;
+      return;
+    }
+    data <<= 1;
+    uint8_t bitTimeout = 0;
+    while ((dataBit = state()) == Idle && ++bitTimeout);  // 2us
+  }
+}
+
+void waitForResponse() {
+  // often gets an early overlapped response to RDY frameControl
+  GIFR = _BV(PCIF); // clear pin change flag
+  uint16_t rfcTimeout = 1;
+  while (!GIFR && ++rfcTimeout);
+
+  if (rfcTimeout)
+    while (1) { // wait for idle
+      GIFR = _BV(PCIF); // clear pin change flag
+      uint8_t bitTimeout = MF_CPU / 1000000 * 2 / 4; // 2us, > 4 cycles
+      while (!GIFR && --bitTimeout);
+      if (!bitTimeout)
+        return;
+    }
+}
+
 void cmd(Frame cmd, uint8_t param = 0) {
+  lastCmd = cmd.frameData;
+  lastParam = param;
   sendFrame(cmd, param);
 
-  sendFrame(RFC);
-  // wait for ready response
-  for (uint8_t bits = 8; bits--;) {  // past sync
-    if (PINB & ILIP) // Hi
-      while (PINB & ILIP);
-    else if (!(ACSR & _BV(ACO))) // Lo  -- ? how fast is comparator -- no spec!!
-      while (!(ACSR & _BV(ACO)));
-    else ++bits; // idle - timeout
+  if (cmd.frameData == SDA.frameData) return;
+
+  if (cmd.frameControl == RDY) {  // early, overlapped response
+    waitForResponse();
+    return;
   }
+
+  recvFrame();  // often long delayed processing before echo
+
+  if (cmd.frameControl == DABcc) return; // echoed data syncs
+
+  sendFrame(RFC);
+  waitForResponse();
+
 }
 
 void sendStr(const char* str) {
@@ -105,30 +178,32 @@ void sendStr(const char* str) {
 }
 
 
-void done() {
-  DDRB |= LED;
-  while (1) {
-    PINB = LED;
-    __builtin_avr_delay_cycles(MF_CPU / 4);
-  }
-}
-
 int main(void) {
-  DDRB = ILOP | ILON;
-  PORTB |= ILIN;  // ~32K pullup for 1.8V; external pull down: 32K * (5 - 1.8)/1.8 ~ 56K
-
-  ACSR = ACBG | ACI;
+  DDRB = ILOP | ILON; // output pins
+  PCMSK = ILIH | ILIL;
+  DIDR0 = ~PCMSK;
 
   cmd(REN);
+  cmd(DCL);
   cmd(AAD, 1);
   cmd(LAD, 1);
-  cmd(DCL);
+
+#if 0
+  sendStr("F1T1");
+
+  cmd(TAD, 1);
+  cmd(SDA);
+  while (1) {
+    recvFrame();
+    sendFrame(DAB, data);
+
+    // handle ETO --> new SDA
+  }
+#endif
 
   // 3468
   while (1)
     sendStr("D2" __TIME__); // no lower case
-
-  done();
 
   // sendStr("D1F4");
 
@@ -144,8 +219,6 @@ int main(void) {
   // listen
 
   cmd(GTL);
-
-  done();
 
 }
 
