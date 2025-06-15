@@ -1,6 +1,14 @@
 // HP-IL message table derived from https://github.com/gIzFer/hpil
 
-enum ControlCode {DABcc, SRQ, ENDcc, END_SRQ,  CMD, RDY, IDYcc, IDY_SRQ};
+enum ControlCode {DABcc, DAB_SRQ, ENDcc, END_SRQ,  CMD, RDY, IDYcc, IDY_SRQ};
+
+#define SRQ 1
+#define EOI 2
+
+typedef struct {  // in big endian transfer order: 3 frame control bits first
+  uint8_t frameData; 
+  ControlCode frameControl;
+} XferFrame;
 
 typedef struct {
 	ControlCode frameControl;

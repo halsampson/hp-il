@@ -77,66 +77,57 @@ void zeroSync() {
 void sendFrame(Frame cmd, uint8_t param = 0){
   // if (param & ~cmd.paramBits) while(1);  // error check
 
-  uint8_t data = cmd.frameData | (param & cmd.paramBits);  // mask
+  uint16_t sendBits = (uint16_t)cmd.frameControl << 8 | cmd.frameData | (param & cmd.paramBits);  // mask
 	cmd.frameControl & CMD ? oneSync() : zeroSync();
-	cmd.frameControl & ENDcc ? one() : zero();
-  cmd.frameControl & SRQ ? one() : zero();
-  for (int8_t i = 8; i--; ) {
-		data & 0x80 ? one() : zero();
-    data <<= 1;
+  for (uint8_t i = 2 + 8; i--; ) {
+		sendBits & 0x200 ? one() : zero();  // MSB first
+    sendBits <<= 1;
   }
 }
 
-uint8_t dataBuf[256];
+XferFrame dataBuf[128];
 uint8_t dataBufIdx;
 
 // P1  P0
 //  1   1  Hi
+//  1   0  Never
 //  0   1  Idle
 //  0   0  Lo
 
-inline uint8_t state() {
-  return PINB & (ILIH | ILIL);  // DIDR0 won't mask dWire PB5!!
+typedef enum {Lo, Idle, Never, Hi} State;
+
+inline State state() {
+  return (State)(PINB & (ILIH | ILIL));  // DIDR0 doesn't mask dWire mode PB5!!
 }
 
-const uint8_t Idle = 1;
+static union {
+  XferFrame recvdFrame;
+  uint16_t data;
+};
 
-uint8_t lastCmd, lastParam;
-
-// Alternative: sample mid bit ?
 
 void recvFrame() {
   uint8_t bits = 3 + 8;
-  uint8_t data;
-
-  uint16_t frameTimeout = 1;
-  while (state() == Idle && ++frameTimeout);
-  if (!frameTimeout) return;
-
-#if 0  // TEST sampling
-   uint8_t* pDataBuf = dataBuf;
-   uint8_t i = 0;
-   while (++i)
-     *pDataBuf++ = PINB;
-   return;
-#endif
+  data = 0;
+  uint8_t dataBit;
+  uint32_t frameTimeout = MF_CPU / 10;
+  while ((dataBit = state()) == Idle && --frameTimeout);
 
   while (1) {
-    uint8_t dataBit;
-    while (state() != Idle || state() != Idle);
+    while (state() != Idle || state() != Idle);  // filter transitions thru Idle
+    // Idle -- end of bit
     data |= dataBit & 1;
     if (!--bits) {
-      dataBuf[dataBufIdx++] = data;
+      dataBuf[dataBufIdx++ & 0x3F] = recvdFrame;
       return;
     }
     data <<= 1;
     uint8_t bitTimeout = 0;
-    while ((dataBit = state()) == Idle && ++bitTimeout);  // 2us
+    while ((dataBit = state()) == Idle && ++bitTimeout);  // first Lo/Hi is dataBit
   }
 }
 
-void waitForResponse() {
-  // often gets an early overlapped response to RDY frameControl
+void waitForResponse() { // for early overlapped response to RDY frameControl bits only
   GIFR = _BV(PCIF); // clear pin change flag
   uint16_t rfcTimeout = 1;
   while (!GIFR && ++rfcTimeout);
@@ -152,24 +143,21 @@ void waitForResponse() {
 }
 
 void cmd(Frame cmd, uint8_t param = 0) {
-  lastCmd = cmd.frameData;
-  lastParam = param;
   sendFrame(cmd, param);
 
-  if (cmd.frameData == SDA.frameData) return;
-
-  if (cmd.frameControl == RDY) {  // early, overlapped response
-    waitForResponse();
-    return;
+  switch (cmd.frameControl) {
+    case RDY :  // early, overlapped response
+      if (cmd.frameData != SDA.frameData)
+         waitForResponse(); // ??
+      return;
+    default : break;
   }
 
   recvFrame();  // often long delayed processing before echo
-
-  if (cmd.frameControl == DABcc) return; // echoed data syncs
+  // TODO chk EOI, SRQ Bits
 
   sendFrame(RFC);
   waitForResponse();
-
 }
 
 void sendStr(const char* str) {
@@ -177,6 +165,50 @@ void sendStr(const char* str) {
   cmd(END, '\n');
 }
 
+void getData() {
+  cmd(SDA);
+  while (1) {
+    recvFrame();
+    switch (recvdFrame.frameControl) {
+      case DABcc : sendFrame(DAB, recvdFrame.frameData); break; // echoed data requests next byte
+      case ENDcc : return;
+      default : break;
+    }
+  }
+}
+
+void getReadings() {
+  sendStr("F1T1");
+
+  cmd(TAD, 1);
+  dataBufIdx = 0;
+  do {
+    getData();
+  } while (1 || dataBufIdx);
+}
+
+void displayVersion() {
+ sendStr("D2" __TIME__); // no lower case
+ __builtin_avr_delay_cycles(MF_CPU);
+ sendStr("D1");
+}
+
+void dumpCalibrationSRAM() {
+  // "B2"  binary cal constant out (at each calibration step)  -- see bottom of unit
+  // "Wn" - read SRAM byte (1024 nibbles?) ??
+
+  dataBufIdx = 0;
+  for (uint16_t sramAddr = 0; sramAddr <= 127; sramAddr++) {  // TODO: 255
+    cmd(LAD, 1);
+    cmd(DAB, 'W');  // ???
+    cmd(DAB, sramAddr);
+    cmd(END, '\n');
+
+    cmd(TAD, 1);
+    getData();
+    //dataBufIdx -= 3;
+  }
+}
 
 int main(void) {
   DDRB = ILOP | ILON; // output pins
@@ -188,37 +220,18 @@ int main(void) {
   cmd(AAD, 1);
   cmd(LAD, 1);
 
-#if 0
-  sendStr("F1T1");
+  displayVersion();
 
-  cmd(TAD, 1);
-  cmd(SDA);
-  while (1) {
-    recvFrame();
-    sendFrame(DAB, data);
-
-    // handle ETO --> new SDA
-  }
-#endif
-
-  // 3468
+#if 1
+  getReadings();
+#elif 1
+  dumpCalibrationSRAM();
+#elif 1
   while (1)
-    sendStr("D2" __TIME__); // no lower case
-
-  // sendStr("D1F4");
-
-#if 0
-  // "B2"  binary cal constant out
-  // "Wn" - read SRAM byte (1024 nibbles)
-  cmd(DAB, 'W');
-  cmd(END, 1);
-  cmd(TAD, 1);
-  cmd(SDA);
+    displayVersion();
 #endif
-
-  // listen
 
   cmd(GTL);
-
 }
 
+// TODO: add serial connection
