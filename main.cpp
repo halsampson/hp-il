@@ -26,19 +26,33 @@ void dumpCalibrationSRAM() { // TODO: figure out
   // "B2"  binary cal constant out (at each calibration Cn step?)  -- see bottom of unit
   // "Wn" - read SRAM byte (1024 nibbles?) ?? 3478
 
-  send("Trying C B2:\n");
-  ilSendStr("T2B2");
-  send(ilGetData());
-
-  ilSendStr("CB2");
-  send(ilGetData());
-
-  ilSendStr("C1B2");
-  send(ilGetData());
+  ilSendStr("B2");
+  for (uint8_t sramAddr = 0; sramAddr <= 15; sramAddr++) {
+    send(ilGetData()); send('\n');
+  }
+  /*
+@@@@@@@@@@@@@@@@@
+IIIIIHFOADKBNJLDD
+IIIIIIHOAE@NOBEHH
+@@@@@@EO@OOKONOHH
+@@@@@@@O@@C@OCOOO
+@@@AGBFOADLOK@M@@
+@@@@EID@ACAACIECC
+@@@@@EG@ADD@JIDGG
+@@@@@@F@ACNLOIMGG
+@@@@@@@@ACMDODM@@
+IIIIIII@ACMAOHM@@
+IIIIIIG@AMKDOKD@@
+@@@@@AFOCB@CNDNKK
+@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@
+  */
 
   // 3478A calibration data decoding:
   // See https://tomverbeure.github.io/2022/12/02/HP3478A-Multimeter-Calibration-Data-Backup-and-Battery-Replacement.html
 
+#if 0
   send("\nTrying W\n");
   for (uint16_t sramAddr = 0; sramAddr <= 255; sramAddr++) {
 #if 0
@@ -46,7 +60,7 @@ void dumpCalibrationSRAM() { // TODO: figure out
     ilCmd(DAB, 'W');
     ilCmd(DAB, sramAddr);
     ilCmd(END, '\n');
-#else
+#elif 0
     char readSRAM[8] = "W";
     itoa(sramAddr, readSRAM + 1,10);
     ilSendStr(readSRAM);
@@ -54,6 +68,8 @@ void dumpCalibrationSRAM() { // TODO: figure out
 #endif
     send(ilGetData()[0]);
   }
+#endif
+
 }
 
 int main(void) {
@@ -68,7 +84,7 @@ int main(void) {
   ilSendStr(timeStr);  // compile time = version
 
 #if 1
-  dumpCalibrationSRAM();
+  dumpCalibrationSRAM();  // not yet working
 #endif
 
   timeStr[10] += 5;
