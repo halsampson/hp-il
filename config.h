@@ -2,9 +2,9 @@
 
 #define MF_CPU     16000000
 
-#define ILIH       _BV(PB0) // AIN0
-#define ILIL       _BV(PB1) // AIN1 LED, 1K Ohm to Gnd
-#define LED        _BV(PB1)
+#define ILIP       _BV(PB0) // diode anode    AIN0
+#define ILIN       _BV(PB1) // diode cathode  AIN1
+// #define LED        _BV(PB1) // LED, 1K Ohm to Gnd   *** remove 1K Ohm R5
 
 #define TxDbit     2
 #define RxDbit     2

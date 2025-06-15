@@ -1,31 +1,40 @@
-// HP_IL
+// Super simple HP_IL interface
 
-// Device Output:
-// 100 Ohm matching / 1.5V attenuation network for 5V 23/27 Ohm ATtiny85 outputs:
+// Using DigiSpark ATtiny 85, but easily ported to other MCUs
 
-//  HP-IL In ------------------v- 59 Ohm -- ILOP
-//                             |
-//                          240 Ohm                ATtiny
-//                             |
-//  HP-IL In ------------------^- 59 Ohm -- ILON
-// (Ref: left)
+/*
+100 Ohm matching / 1.5V attenuation network for 5V 23/27 Ohm ATtiny85 outputs:
 
-// Device Input:
-//                       ILP  ILN  (~90 Ohms DC)
-//                        |     |
-//  Vcc -- 100 Ohms -->|---     ---- Gnd
-//                  |     |
-//                 P0    P1
-// (Ref: right)
+HP-IL In <-----------------v-- 59 Ohm ----< ILOP
+                           |
+                        240 Ohm
+                           |
+HP-IL In <-----------------^-- 59 Ohm ----< ILON
+ (Ref: left)
 
-// ATtiny thresholds typ. 2.35V +/- 100 mV hysteresis
+                             /------------< Vcc
+                             |
+                          100 Ohm
+                             |
+                             >------------> ILIP
+                             |
+                    Si diode v
+                            ___
+                             |
+HP-IL Out >----------------- ^------------> ILIN
+
+
+HP-IL Out >------------------------------<> Gnd
+  (Ref: right)
+
+ATtiny thresholds typ. 2.35V +/- 100 mV hysteresis @ Vcc = 5V
+*/
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include "send.h"  // Add library: ..\..\Common\Common\Debug\libCommon.a
 #include "config.h"
 #include "message.c"
-
 
 #define PULSE_CYCLES (MF_CPU / 1000000)  // 1 us
 #define CALL_CYCLES 3
@@ -85,19 +94,21 @@ void sendFrame(Frame cmd, uint8_t param = 0){
   }
 }
 
+
 XferFrame dataBuf[128];
 uint8_t dataBufIdx;
 
-// P1  P0
-//  1   1  Hi
-//  1   0  Never
-//  0   1  Idle
-//  0   0  Lo
+//ILIN ILIP
+// P1   P0
+//  1    1  Hi
+//  1    0  Never
+//  0    1  Idle
+//  0    0  Lo
 
 typedef enum {Lo, Idle, Never, Hi} State;
 
 inline State state() {
-  return (State)(PINB & (ILIH | ILIL));  // DIDR0 doesn't mask dWire mode PB5!!
+  return (State)(PINB & (ILIP | ILIN));  // DIDR0 doesn't mask dWire mode PB5!!
 }
 
 static union {
@@ -105,12 +116,11 @@ static union {
   uint16_t data;
 };
 
-
 void recvFrame() {
   uint8_t bits = 3 + 8;
-  data = 0;
+  data = 0xFFC0; // indicate error in case times out
   uint8_t dataBit;
-  uint32_t frameTimeout = MF_CPU / 10;
+  uint32_t frameTimeout = MF_CPU / 16 / 2; // ~500ms reading wait  TODO adjust
   while ((dataBit = state()) == Idle && --frameTimeout);
 
   while (1) {
@@ -161,18 +171,19 @@ void cmd(Frame cmd, uint8_t param = 0) {
 }
 
 void sendStr(const char* str) {
+  cmd(LAD, 1);
   do cmd(DAB, *str); while (*++str);
   cmd(END, '\n');
 }
 
 void getData() {
-  cmd(SDA);
+  cmd(SDA);  // replaced with data
   while (1) {
     recvFrame();
     switch (recvdFrame.frameControl) {
       case DABcc : sendFrame(DAB, recvdFrame.frameData); break; // echoed data requests next byte
       case ENDcc : return;
-      default : break;
+      default : return;
     }
   }
 }
@@ -184,7 +195,7 @@ void getReadings() {
   dataBufIdx = 0;
   do {
     getData();
-  } while (1 || dataBufIdx);
+  } while (dataBufIdx < 128 - 14);
 }
 
 void displayVersion() {
@@ -198,9 +209,9 @@ void dumpCalibrationSRAM() {
   // "Wn" - read SRAM byte (1024 nibbles?) ??
 
   dataBufIdx = 0;
-  for (uint16_t sramAddr = 0; sramAddr <= 127; sramAddr++) {  // TODO: 255
+  for (uint16_t sramAddr = 0; sramAddr <= 127; sramAddr++) {  // TODO: 255+ ???
     cmd(LAD, 1);
-    cmd(DAB, 'W');  // ???
+    cmd(DAB, 'W');  // ??? TODO getting readings!!
     cmd(DAB, sramAddr);
     cmd(END, '\n');
 
@@ -212,24 +223,23 @@ void dumpCalibrationSRAM() {
 
 int main(void) {
   DDRB = ILOP | ILON; // output pins
-  PCMSK = ILIH | ILIL;
+  PCMSK = ILIP | ILIN;
   DIDR0 = ~PCMSK;
 
   cmd(REN);
   cmd(DCL);
   cmd(AAD, 1);
-  cmd(LAD, 1);
-
+  
   displayVersion();
 
 #if 1
   getReadings();
 #elif 1
   dumpCalibrationSRAM();
-#elif 1
+#endif
+
   while (1)
     displayVersion();
-#endif
 
   cmd(GTL);
 }
