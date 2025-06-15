@@ -22,11 +22,10 @@ void incrSeconds() {
   } // to 59:59:59 hours
 }
 
-void dumpCalibrationSRAM() { // TODO: figure out
-  // "B2"  binary cal constant out (at each calibration Cn step?)  -- see bottom of unit
+void dumpCalibrationSRAM() {
   send("Calibration data:\n");
 
-  ilSendStr("B2"); // see bottom of HP 3468
+  ilSendStr("B2"); // binary Calibration constants out -- see bottom of HP 3468
   const char* calData = ilGetData();
   for (uint16_t p = 0; p < MAX_RESPONSE_LEN; ++p) {
     if (!calData[p]) break; // end of string
@@ -36,7 +35,6 @@ void dumpCalibrationSRAM() { // TODO: figure out
     if (p % 16 == 15) send('\n');
   }
   send('\n');
-
 
 /*
 3468B Calibration data:
@@ -57,13 +55,12 @@ void dumpCalibrationSRAM() { // TODO: figure out
  0000000 000000000
  0000000 00000000
 */
-
   // 3478A calibration data decoding:
   // See https://tomverbeure.github.io/2022/12/02/HP3478A-Multimeter-Calibration-Data-Backup-and-Battery-Replacement.html
-  // "Wn" - read SRAM byte (1024 nibbles)
+  // "Wn" - read SRAM byte (1024 nibbles ?)
 
 #if 0
-  send("\nTrying W\n");
+  send("\nTrying W command\n");
   for (uint16_t sramAddr = 0; sramAddr <= 255; sramAddr++) {
 #if 0
     ilCmd(LAD, 1);
@@ -89,16 +86,13 @@ int main(void) {
   ilCmd(DCL);
   ilCmd(AAD, 1);
 
-  ilSendStr("F1T1"); // read Volts
-
   ilSendStr(timeStr);  // display compile time as version
 
-#if 1
   dumpCalibrationSRAM();
-#endif
 
-  timeStr[10] += 5;
+  ilSendStr("F1T1"); // read Volts
 
+  timeStr[10] += 2;
   while (1) {
     incrSeconds();
     ilSendStr(timeStr);

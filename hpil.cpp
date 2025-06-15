@@ -105,13 +105,13 @@ XferFrame recvFrame() {
   }
 }
 
-void waitForResponse() { // for early overlapped response to RDY frameControl bits only
+void waitForResponse() { // for early overlapped responses to RDY frameControl bits only
   GIFR = _BV(PCIF); // clear pin change flag
   uint16_t rfcTimeout = 1;
-  while (!GIFR && ++rfcTimeout);
+  while (!GIFR && ++rfcTimeout); // wait for any activity
 
   if (rfcTimeout)
-    while (1) { // wait for idle
+    while (1) { // wait for no activity for ~ a bit time
       GIFR = _BV(PCIF); // clear pin change flag
       uint8_t bitTimeout = MF_CPU / 1000000 * 2 / 4; // 2us, > 4 cycles
       while (!GIFR && --bitTimeout);

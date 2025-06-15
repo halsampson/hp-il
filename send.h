@@ -42,23 +42,5 @@ void send(uint32_t i);
   void enableRx();
 #endif
 
-#ifdef FREQO
-
-#if (FREQO & _BV(PB0)) || (FREQO & _BV(PB1) || (FREQO & _BV(PB4)))
-  void freqOut10kHz();
-  void freqOutMax0();
-#endif
-
-void freqOut();
-
-#if (FREQO == _BV(PB0))
-  void freqOutHi();
-#endif
-
-#if (FREQO == _BV(PB1))
-  void freqOutMax();
-#endif
-
-#endif
 
 
