@@ -1,4 +1,4 @@
-// Tests of HP-IL
+// Tests of HP-IL interface commands
 
 #include "hpil.h"
 #include "send.h"
@@ -26,19 +26,20 @@ void dumpCalibrationSRAM() { // TODO: figure out
   // "B2"  binary cal constant out (at each calibration Cn step?)  -- see bottom of unit
   send("Calibration data:\n");
 
-  ilSendStr("B2");
-  for (uint8_t sramAddr = 0; sramAddr < 16; sramAddr++) {
-    const char* calData = ilGetData();
-    for (uint8_t p = 0; p < 16; ++p) {
-      punctuation = true;
-      sendHex((uint16_t)(calData[p] - 64)); // nibbles
-      if (p == 6) send(' ');
-    }
-    send('\n');
+  ilSendStr("B2"); // see bottom of HP 3468
+  const char* calData = ilGetData();
+  for (uint16_t p = 0; p < MAX_RESPONSE_LEN; ++p) {
+    if (!calData[p]) break; // end of string
+    punctuation = true;
+    sendHex((uint16_t)(calData[p] - 64)); // nibbles
+    if (p % 16 == 6) send(' ');
+    if (p % 16 == 15) send('\n');
   }
+  send('\n');
+
 
 /*
- Calibration data:
+3468B Calibration data:
  0000000 000000000
  9999986 F14B2EAC4
  9999998 F150EF258
@@ -54,24 +55,7 @@ void dumpCalibrationSRAM() { // TODO: figure out
  0000016 F3203E4EB
  0000000 000000000
  0000000 000000000
- 0000000 00000000F
-
-@@@@@@@@@@@@@@@@@
-IIIIIHFOADKBNJLDD
-IIIIIIHOAE@NOBEHH
-@@@@@@EO@OOKONOHH
-@@@@@@@O@@C@OCOOO
-@@@AGBFOADLOK@M@@
-@@@@EID@ACAACIECC
-@@@@@EG@ADD@JIDGG
-@@@@@@F@ACNLOIMGG
-@@@@@@@@ACMDODM@@
-IIIIIII@ACMAOHM@@
-IIIIIIG@AMKDOKD@@
-@@@@@AFOCB@CNDNKK
-@@@@@@@@@@@@@@@@@
-@@@@@@@@@@@@@@@@@
-@@@@@@@@@@@@@@@
+ 0000000 00000000
 */
 
   // 3478A calibration data decoding:
@@ -107,10 +91,10 @@ int main(void) {
 
   ilSendStr("F1T1"); // read Volts
 
-  ilSendStr(timeStr);  // compile time = version
+  ilSendStr(timeStr);  // display compile time as version
 
 #if 1
-  dumpCalibrationSRAM();  // not yet working
+  dumpCalibrationSRAM();
 #endif
 
   timeStr[10] += 5;
@@ -118,8 +102,8 @@ int main(void) {
   while (1) {
     incrSeconds();
     ilSendStr(timeStr);
-    send(getReading());  // 2 readings per sec @ 5 1/2 digits
-    __builtin_avr_delay_cycles(MF_CPU / 2);
+    send(getReading());  // 2 readings per sec @ 5 1/2 digits -- poor clock
+    __builtin_avr_delay_cycles(MF_CPU / 2); // adjust
   }
 
   ilCmd(GTL);

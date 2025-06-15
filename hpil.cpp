@@ -67,12 +67,12 @@ void sendFrame(Frame cmd, uint8_t param = 0) {
 }
 
 
-//ILIN ILIP
-// P1   P0
-//  1    1  Hi
-//  1    0  Never
-//  0    1  Idle
-//  0    0  Lo
+// ILIN ILIP
+//  P1   P0
+//   1    1  Hi
+//   1    0  Never
+//   0    1  Idle
+//   0    0  Lo
 
 typedef enum {Lo, Idle, Never, Hi} State;
 
@@ -101,7 +101,7 @@ XferFrame recvFrame() {
 
     data <<= 1;
     uint8_t bitTimeout = 0;
-    while ((dataBit = state()) == Idle && ++bitTimeout);  // first Lo/Hi is dataBit
+    while ((dataBit = state()) == Idle && ++bitTimeout);  // first Lo/Hi after Idle is dataBit
   }
 }
 
@@ -124,15 +124,16 @@ void ilCmd(Frame cmd, uint8_t param) {
   sendFrame(cmd, param);
 
   switch (cmd.frameControl) {
-    case RDY :  // early, overlapped response
-      if (cmd.frameData != SDA.frameData)
-         waitForResponse(); // ??
+    case RDY : // early, overlapped response based on just the 3 frameControl bits
+      if (cmd.frameData != SDA.frameData)  // SDA replaced by response data
+        waitForResponse();
       return;
     default : break;
   }
 
   recvFrame();  // often long delayed processing before echo
-  // TODO: handle EOI, SRQ Bits
+
+  // TODO: handle EOI, SRQ as needed
 
   sendFrame(RFC);
   waitForResponse();
@@ -145,9 +146,9 @@ void ilSendStr(const char* str, uint8_t addr) {
 }
 
 const char* ilGetData(uint8_t addr) {
-  ilCmd(TAD, addr);
-  static char dataBuf[16]; // to hold 14 character reading
+  static char dataBuf[MAX_RESPONSE_LEN + 1]; // to hold at least 14 character reading
   uint8_t dataBufIdx = 0;
+  ilCmd(TAD, addr);
   ilCmd(SDA);  // replaced with data
   do {
     XferFrame recvdFrame = recvFrame();

@@ -40,7 +40,7 @@ enum ControlCode {DABcc, DAB_SRQ, ENDcc, END_SRQ,  CMD, RDY, IDYcc, IDY_SRQ};
 #define SRQ 1
 #define EOI 2
 
-typedef struct {  // in big endian transfer order: 3 frame control bits first
+typedef struct { // in big endian transfer order: 3 frame control bits first
   uint8_t frameData;
   ControlCode frameControl;
 } XferFrame;
@@ -52,6 +52,8 @@ typedef struct {
 } Frame;
 
 #include "message.c"
+
+#define MAX_RESPONSE_LEN 256 // for "B2" calibration data
 
 void ilInit();
 void ilCmd(Frame cmd, uint8_t param = 0);
