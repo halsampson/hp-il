@@ -1,12 +1,13 @@
 // Tests of HP-IL
 
 #include "hpil.h"
+#include "send.h"
 
-void getReading() {
+const char* getReading() {
   ilSendStr("D1F1T1");
 
   ilCmd(TAD, 1);
-  ilGetData();
+  return ilGetData();
 }
 
 char timeStr[] = "D2 " __TIME__;
@@ -56,16 +57,18 @@ int main(void) {
   displayVersion();
 
 #if 1
-  getReading();
+  send(getReading());
   timeStr[10] += 6;
 #elif 1
   dumpCalibrationSRAM();
 #endif
 
-  while (1)
+  while (1) {
     displayVersion();
+    send(getReading());
+  }    
 
   ilCmd(GTL);
 }
 
-// TODO: add serial connection
+

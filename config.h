@@ -7,8 +7,8 @@
 // #define LED        _BV(PB1) // LED, 1K Ohm to Gnd   *** remove 1K Ohm R5
 
 #define TxDbit     2
-#define RxDbit     2
-#define NC        _BV(PB2) // ADC1
+// #define RxDbit     2
+#define SerialIO   _BV(PB2) // ADC1
 
 #define ILOP      _BV(PB3) // 3.3V or 64mA from 5V or remove Zener
 //#define USBM      _BV(PB3) // ADC3 22? 3.6V Zener to Gnd  1.5K Ohm to Vcc

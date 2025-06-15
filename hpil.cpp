@@ -144,18 +144,19 @@ void ilSendStr(const char* str, uint8_t addr) {
   ilCmd(END, '\n');
 }
 
-char dataBuf[32];
-
-char* ilGetData() {
+const char* ilGetData() {
+  static char dataBuf[16]; // to hold 14 character reading
   uint8_t dataBufIdx = 0;
   ilCmd(SDA);  // replaced with data
   do {
     XferFrame recvdFrame = recvFrame();
+    dataBuf[dataBufIdx++] = recvdFrame.frameData;
     switch (recvdFrame.frameControl) {
       case DABcc :
-        dataBuf[dataBufIdx++] = recvdFrame.frameData;
         sendFrame(DAB, recvdFrame.frameData); break; // echoed data requests next byte
-      case ENDcc : return dataBuf;
+      case ENDcc :
+        dataBuf[dataBufIdx] = 0;
+        return dataBuf;
       default : break;
     }
   } while (dataBufIdx < sizeof(dataBuf));
