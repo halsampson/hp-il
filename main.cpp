@@ -1,239 +1,63 @@
-// Super simple HP_IL interface
+// Tests of HP-IL
 
-// Using DigiSpark ATtiny 85, but easily ported to other MCUs
+#include "hpil.h"
 
-/*
-100 Ohm matching / 1.5V attenuation network for 5V 23/27 Ohm ATtiny85 outputs:
+void getReading() {
+  ilSendStr("D1F1T1");
 
-HP-IL In <-----------------v-- 59 Ohm ----< ILOP
-                           |
-                        240 Ohm
-                           |
-HP-IL In <-----------------^-- 59 Ohm ----< ILON
- (Ref: left)
-
-                             /------------< Vcc
-                             |
-                          100 Ohm
-                             |
-                             >------------> ILIP
-                             |
-                    Si diode v
-                            ___
-                             |
-HP-IL Out >----------------- ^------------> ILIN
-
-
-HP-IL Out >------------------------------<> Gnd
-  (Ref: right)
-
-ATtiny thresholds typ. 2.35V +/- 100 mV hysteresis @ Vcc = 5V
-*/
-
-#include <avr/io.h>
-#include <avr/interrupt.h>
-#include "send.h"  // Add library: ..\..\Common\Common\Debug\libCommon.a
-#include "config.h"
-#include "message.c"
-
-#define PULSE_CYCLES (MF_CPU / 1000000)  // 1 us
-#define CALL_CYCLES 3
-#define RET_CYCLES  5
-
-void toggle() {
-  __builtin_avr_delay_cycles(PULSE_CYCLES - CALL_CYCLES - RET_CYCLES - 1);
-  PINB = ILOP | ILON;
+  ilCmd(TAD, 1);
+  ilGetData();
 }
 
-void idle() {
-  __builtin_avr_delay_cycles(PULSE_CYCLES - CALL_CYCLES - 1);
-  PORTB &= ~(ILOP | ILON);   // PORTB.OUTCLR = ILOP | ILON
-  __builtin_avr_delay_cycles(2 * PULSE_CYCLES - 2 * RET_CYCLES - 1);
-}
+char timeStr[] = "D2 " __TIME__;
 
-void dataBit() {
-  toggle();
-  idle();
-}
-
-void one() {
-  PINB = ILOP;
-  dataBit();
-}
-
-void zero() {
-  PINB = ILON;
-  dataBit();
-}
-
-void sync() {
-  toggle();
-  toggle();
-  toggle();
-  idle();
-}
-
-void oneSync() {
-  PINB = ILOP;
-  sync();
-}
-
-void zeroSync() {
-  PINB = ILON;
-  sync();
-}
-
-void sendFrame(Frame cmd, uint8_t param = 0){
-  // if (param & ~cmd.paramBits) while(1);  // error check
-
-  uint16_t sendBits = (uint16_t)cmd.frameControl << 8 | cmd.frameData | (param & cmd.paramBits);  // mask
-	cmd.frameControl & CMD ? oneSync() : zeroSync();
-  for (uint8_t i = 2 + 8; i--; ) {
-		sendBits & 0x200 ? one() : zero();  // MSB first
-    sendBits <<= 1;
-  }
-}
-
-
-XferFrame dataBuf[128];
-uint8_t dataBufIdx;
-
-//ILIN ILIP
-// P1   P0
-//  1    1  Hi
-//  1    0  Never
-//  0    1  Idle
-//  0    0  Lo
-
-typedef enum {Lo, Idle, Never, Hi} State;
-
-inline State state() {
-  return (State)(PINB & (ILIP | ILIN));  // DIDR0 doesn't mask dWire mode PB5!!
-}
-
-static union {
-  XferFrame recvdFrame;
-  uint16_t data;
-};
-
-void recvFrame() {
-  uint8_t bits = 3 + 8;
-  data = 0xFFC0; // indicate error in case times out
-  uint8_t dataBit;
-  uint32_t frameTimeout = MF_CPU / 16 / 2; // ~500ms reading wait  TODO adjust
-  while ((dataBit = state()) == Idle && --frameTimeout);
-
+void incrSeconds() {
+  char* pTime = timeStr + 3 + 8 - 1;
   while (1) {
-    while (state() != Idle || state() != Idle);  // filter transitions thru Idle
-    // Idle -- end of bit
-    data |= dataBit & 1;
-    if (!--bits) {
-      dataBuf[dataBufIdx++ & 0x3F] = recvdFrame;
-      return;
-    }
-    data <<= 1;
-    uint8_t bitTimeout = 0;
-    while ((dataBit = state()) == Idle && ++bitTimeout);  // first Lo/Hi is dataBit
-  }
-}
-
-void waitForResponse() { // for early overlapped response to RDY frameControl bits only
-  GIFR = _BV(PCIF); // clear pin change flag
-  uint16_t rfcTimeout = 1;
-  while (!GIFR && ++rfcTimeout);
-
-  if (rfcTimeout)
-    while (1) { // wait for idle
-      GIFR = _BV(PCIF); // clear pin change flag
-      uint8_t bitTimeout = MF_CPU / 1000000 * 2 / 4; // 2us, > 4 cycles
-      while (!GIFR && --bitTimeout);
-      if (!bitTimeout)
-        return;
-    }
-}
-
-void cmd(Frame cmd, uint8_t param = 0) {
-  sendFrame(cmd, param);
-
-  switch (cmd.frameControl) {
-    case RDY :  // early, overlapped response
-      if (cmd.frameData != SDA.frameData)
-         waitForResponse(); // ??
-      return;
-    default : break;
-  }
-
-  recvFrame();  // often long delayed processing before echo
-  // TODO chk EOI, SRQ Bits
-
-  sendFrame(RFC);
-  waitForResponse();
-}
-
-void sendStr(const char* str) {
-  cmd(LAD, 1);
-  do cmd(DAB, *str); while (*++str);
-  cmd(END, '\n');
-}
-
-void getData() {
-  cmd(SDA);  // replaced with data
-  while (1) {
-    recvFrame();
-    switch (recvdFrame.frameControl) {
-      case DABcc : sendFrame(DAB, recvdFrame.frameData); break; // echoed data requests next byte
-      case ENDcc : return;
-      default : return;
-    }
-  }
-}
-
-void getReadings() {
-  sendStr("F1T1");
-
-  cmd(TAD, 1);
-  dataBufIdx = 0;
-  do {
-    getData();
-  } while (dataBufIdx < 128 - 14);
+    if (++*pTime <= '9') break;
+    *pTime-- -= 10;
+    if (++*pTime <= '5') break;
+    *pTime-- -= 6;
+    if (*pTime <= '0') break;
+    --pTime;  // over colon
+  } // to 59:59:59 hours
 }
 
 void displayVersion() {
- sendStr("D2" __TIME__); // no lower case
- __builtin_avr_delay_cycles(MF_CPU);
- sendStr("D1");
+  ilSendStr(timeStr); // no lower case
+  __builtin_avr_delay_cycles(MF_CPU - MF_CPU / 19); // adjust
+  incrSeconds();
 }
 
-void dumpCalibrationSRAM() {
-  // "B2"  binary cal constant out (at each calibration step)  -- see bottom of unit
+void dumpCalibrationSRAM() { // TODO: fix
+  // "B2"  binary cal constant out (at each calibration Cn step?)  -- see bottom of unit
   // "Wn" - read SRAM byte (1024 nibbles?) ??
 
-  dataBufIdx = 0;
   for (uint16_t sramAddr = 0; sramAddr <= 127; sramAddr++) {  // TODO: 255+ ???
-    cmd(LAD, 1);
-    cmd(DAB, 'W');  // ??? TODO getting readings!!
-    cmd(DAB, sramAddr);
-    cmd(END, '\n');
+    ilCmd(LAD, 1);
+    ilCmd(DAB, 'W');  // ??? TODO getting readings!!
+    ilCmd(DAB, sramAddr);
+    ilCmd(END, '\n');
 
-    cmd(TAD, 1);
-    getData();
+    ilCmd(TAD, 1);
+    ilGetData();
     //dataBufIdx -= 3;
   }
 }
 
 int main(void) {
-  DDRB = ILOP | ILON; // output pins
-  PCMSK = ILIP | ILIN;
-  DIDR0 = ~PCMSK;
+  ilInit();
 
-  cmd(REN);
-  cmd(DCL);
-  cmd(AAD, 1);
-  
+  ilCmd(REN);
+  ilCmd(DCL);
+  ilCmd(AAD, 1);
+
+  timeStr[10] += 2;
   displayVersion();
 
 #if 1
-  getReadings();
+  getReading();
+  timeStr[10] += 6;
 #elif 1
   dumpCalibrationSRAM();
 #endif
@@ -241,7 +65,7 @@ int main(void) {
   while (1)
     displayVersion();
 
-  cmd(GTL);
+  ilCmd(GTL);
 }
 
 // TODO: add serial connection
