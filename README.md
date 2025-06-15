@@ -1,10 +1,12 @@
 ## Super simple HP-IL interface
 
-Using DigiSpark ATtiny 85, but easily ported to other MCUs
+Tested communicating with HP 3468B DMM: can set up, read measurements, and read calibration SRAM data (using "B2" command).
+
+Tested using ATtiny85 DigiSpark, but can be easily ported to other MCUs.
+
+HP-IL cable interface circuit consists of 4 impedance matching resistors and a level-shifting diode to decode the 3 level pulses using 2 digital input pins (ILIP and ILIN) with ~200mV hysteresis.  ILOP and ILON are ~25 Ohm drive 5V digital output pins:
 
 ```
-100 Ohm matching / 1.5V attenuation network for 5V 23/27 Ohm ATtiny85 outputs:
-
 HP-IL In <-----------------v-- 59 Ohm ----< ILOP
                            |
                         240 Ohm
@@ -29,3 +31,9 @@ HP-IL Out >----------------- ^------------> ILIN
 HP-IL Out >------------------------------<> Gnd
   (Ref: right)
 ```
+
+
+
+Input connection pins used: https://www.te.com/en/product-166291-1.html (crimp to cable)
+
+These female pins can also be split/filed to use on the Output pins, but there must be better fits!
