@@ -144,7 +144,8 @@ void ilSendStr(const char* str, uint8_t addr) {
   ilCmd(END, '\n');
 }
 
-const char* ilGetData() {
+const char* ilGetData(uint8_t addr) {
+  ilCmd(TAD, addr);
   static char dataBuf[16]; // to hold 14 character reading
   uint8_t dataBufIdx = 0;
   ilCmd(SDA);  // replaced with data

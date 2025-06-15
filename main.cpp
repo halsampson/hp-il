@@ -4,9 +4,7 @@
 #include "send.h"
 
 const char* getReading() {
-  ilSendStr("D1F1T1");
-
-  ilCmd(TAD, 1);
+  ilSendStr("T1");
   return ilGetData();
 }
 
@@ -24,25 +22,37 @@ void incrSeconds() {
   } // to 59:59:59 hours
 }
 
-void displayVersion() {
-  ilSendStr(timeStr); // no lower case
-  __builtin_avr_delay_cycles(MF_CPU - MF_CPU / 19); // adjust
-  incrSeconds();
-}
-
-void dumpCalibrationSRAM() { // TODO: fix
+void dumpCalibrationSRAM() { // TODO: figure out
   // "B2"  binary cal constant out (at each calibration Cn step?)  -- see bottom of unit
-  // "Wn" - read SRAM byte (1024 nibbles?) ??
+  // "Wn" - read SRAM byte (1024 nibbles?) ?? 3478
 
-  for (uint16_t sramAddr = 0; sramAddr <= 127; sramAddr++) {  // TODO: 255+ ???
+  send("Trying C B2:\n");
+  ilSendStr("T2B2");
+  send(ilGetData());
+
+  ilSendStr("CB2");
+  send(ilGetData());
+
+  ilSendStr("C1B2");
+  send(ilGetData());
+
+  // 3478A calibration data decoding:
+  // See https://tomverbeure.github.io/2022/12/02/HP3478A-Multimeter-Calibration-Data-Backup-and-Battery-Replacement.html
+
+  send("\nTrying W\n");
+  for (uint16_t sramAddr = 0; sramAddr <= 255; sramAddr++) {
+#if 0
     ilCmd(LAD, 1);
-    ilCmd(DAB, 'W');  // ??? TODO getting readings!!
+    ilCmd(DAB, 'W');
     ilCmd(DAB, sramAddr);
     ilCmd(END, '\n');
-
-    ilCmd(TAD, 1);
-    ilGetData();
-    //dataBufIdx -= 3;
+#else
+    char readSRAM[8] = "W";
+    itoa(sramAddr, readSRAM + 1,10);
+    ilSendStr(readSRAM);
+    // no response
+#endif
+    send(ilGetData()[0]);
   }
 }
 
@@ -53,20 +63,22 @@ int main(void) {
   ilCmd(DCL);
   ilCmd(AAD, 1);
 
-  timeStr[10] += 2;
-  displayVersion();
+  ilSendStr("F1T1"); // read Volts
+
+  ilSendStr(timeStr);  // compile time = version
 
 #if 1
-  send(getReading());
-  timeStr[10] += 6;
-#elif 1
   dumpCalibrationSRAM();
 #endif
 
+  timeStr[10] += 5;
+
   while (1) {
-    displayVersion();
-    send(getReading());
-  }    
+    incrSeconds();
+    ilSendStr(timeStr);
+    send(getReading());  // 2 readings per sec @ 5 1/2 digits
+    __builtin_avr_delay_cycles(MF_CPU / 2);
+  }
 
   ilCmd(GTL);
 }
