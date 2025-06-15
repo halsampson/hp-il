@@ -1,4 +1,4 @@
-## Super simple HP_IL interface
+## Super simple HP-IL interface
 
 Using DigiSpark ATtiny 85, but easily ported to other MCUs
 
