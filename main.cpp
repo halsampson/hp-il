@@ -2,6 +2,8 @@
 
 #include "hpil.h"
 #include "send.h"
+#include "thermistor.h"
+#include "stdio.h"
 
 const char* getReading() {
   ilSendStr("T1");
@@ -53,7 +55,7 @@ void dumpCalibrationSRAM() {
  0000016 F3203E4EB
  0000000 000000000
  0000000 000000000
- 0000000 00000000
+ 0000000 000000000
 */
   // 3478A calibration data decoding:
   // See https://tomverbeure.github.io/2022/12/02/HP3478A-Multimeter-Calibration-Data-Backup-and-Battery-Replacement.html
@@ -69,14 +71,27 @@ void dumpCalibrationSRAM() {
     ilCmd(END, '\n');
 #elif 0
     char readSRAM[8] = "W";
-    itoa(sramAddr, readSRAM + 1,10);
+    itoa(sramAddr, readSRAM + 1, 10);
     ilSendStr(readSRAM);
     // no response
 #endif
     send(ilGetData()[0]);
   }
 #endif
+}
 
+void showTemperature() {
+  float rTherm = atof(getReading());  // no strtof() !
+  float temperature = degreesC(rTherm);
+
+  static float lastTemperature = 25;
+  int deltaT = (int)((temperature - lastTemperature) * 100000);  // ~7 digits float precision
+
+  char tempStr[20];
+  sprintf(tempStr, "D2%.4f%+dC\n", temperature, deltaT);
+  lastTemperature = temperature;
+  ilSendStr(tempStr);
+  send(tempStr+2);
 }
 
 int main(void) {
@@ -90,7 +105,13 @@ int main(void) {
 
   dumpCalibrationSRAM();
 
-  ilSendStr("F1T1"); // read Volts
+  // ilSendStr("F1T1"); // read Volts
+  ilSendStr("F3T1"); // read 2-wire Ohms
+
+  while (1) {
+    showTemperature();
+    __builtin_avr_delay_cycles(MF_CPU * 10);
+  }    
 
   timeStr[10] += 2;
   while (1) {
