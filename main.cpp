@@ -130,6 +130,7 @@ int main(void) {
   ilCmd(AAD, 1);
 
   ilSendStr(timeStr);  // display compile time as version
+  send(timeStr); send('\n');
 
   if (1) dumpCalibrationSRAM();
 

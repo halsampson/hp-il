@@ -155,11 +155,14 @@ const char* ilGetData(uint8_t addr) {
     dataBuf[dataBufIdx++] = recvdFrame.frameData;
     switch (recvdFrame.frameControl) {
       case DABcc :
+      case DAB_SRQ :
         sendFrame(DAB, recvdFrame.frameData); break; // echoed data requests next byte
       case ENDcc :
+      case END_SRQ :
+      default :
         dataBuf[dataBufIdx] = 0;
         return dataBuf;
-      default : break;
+      // TODO : handle other cases ***
     }
   } while (dataBufIdx < sizeof(dataBuf));
   return dataBuf;

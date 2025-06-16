@@ -7,9 +7,9 @@
 #define THERM_T0      (25 + ZERO_KELVIN)
 #define R0            10000  // Ohms
 
-#ifdef THERM_USE_FLOAT // adds ~1300 bytes for float support
+#ifdef THERM_USE_FLOAT // adds ~1300+ bytes for float support
 
-#ifdef THERM_USE_LOG  // for testing: accurate using log: ~9000 bytes?
+#ifdef THERM_USE_LOG  // accurate using log ?bytes?
 
 #include "math.h"
 
@@ -49,7 +49,7 @@ float logfn(float x) { // Borchardts approximation:
   return 6 * (x - 1) / (x + 1 + 4 * sqrtfn(x));
 }
 
-float degreesC(float rTherm){  // -38° to 135°C 
+float degreesC(float rTherm){  // -38° to 135°C
   return 1 / (1 / THERM_T0  + logfn(rTherm / R0) / thermBeta) - ZERO_KELVIN;
 }
 
