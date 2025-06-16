@@ -81,9 +81,11 @@ void dumpCalibrationSRAM() {
 }
 
 void showTemperature() {
-  float rTherm = atof(getReading());  // no strtof() !
-  float temperature = degreesC(rTherm);
-
+  const uint8_t NumAvg = 16;
+  float sumReadings = 0;
+  for (uint8_t i = 0; i < NumAvg; ++i)
+    sumReadings += atof(getReading());  // no strtof() !
+  float temperature = degreesC(sumReadings / NumAvg);
   static float lastTemperature = 25;
   int deltaT = (int)((temperature - lastTemperature) * 100000);  // ~7 digits float precision
 
@@ -103,15 +105,13 @@ int main(void) {
 
   ilSendStr(timeStr);  // display compile time as version
 
-  dumpCalibrationSRAM();
+  if (0) dumpCalibrationSRAM();
 
   // ilSendStr("F1T1"); // read Volts
-  ilSendStr("F3T1"); // read 2-wire Ohms
 
-  while (1) {
+  ilSendStr("F3T1"); // read 2-wire Ohms
+  while (1)
     showTemperature();
-    __builtin_avr_delay_cycles(MF_CPU * 10);
-  }    
 
   timeStr[10] += 2;
   while (1) {
