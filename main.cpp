@@ -29,6 +29,15 @@ void dumpCalibrationSRAM() {
 
   ilSendStr("B2"); // binary Calibration constants out -- see bottom of HP 3468
   const char* calData = ilGetData();
+
+  // for "B3" restore
+  for (uint16_t p = 0; p < MAX_RESPONSE_LEN; ++p) {
+    if (!calData[p]) break; // end of string
+    send(calData[p]);
+    if (p % 16 == 15) send('\n');
+  }
+  send('\n');
+
   for (uint16_t p = 0; p < MAX_RESPONSE_LEN; ++p) {
     if (!calData[p]) break; // end of string
     punctuation = true;
@@ -40,6 +49,23 @@ void dumpCalibrationSRAM() {
 
 /*
 3468B Calibration data:
+ @@@@@@@@@@@@@@@@
+ IIIIIHFOADKBNJLD
+ IIIIIIHOAE@NOBEH
+ @@@@@@EO@OOKONOH
+ @@@@@@@O@@C@OCOO
+ @@@AGBFOADLOK@M@
+ @@@@EID@ACAACIEC
+ @@@@@EG@ADD@JIDG
+ @@@@@@F@ACNLOIMG
+ @@@@@@@@ACMDODM@
+ IIIIIII@ACMAOHM@
+ IIIIIIG@AMKDOKD@
+ @@@@@AFOCB@CNDNK
+ @@@@@@@@@@@@@@@@
+ @@@@@@@@@@@@@@@@
+ @@@@@@@@@@@@@@@@
+
  0000000 000000000
  9999986 F14B2EAC4
  9999998 F150EF258
@@ -105,7 +131,7 @@ int main(void) {
 
   ilSendStr(timeStr);  // display compile time as version
 
-  if (0) dumpCalibrationSRAM();
+  if (1) dumpCalibrationSRAM();
 
   // ilSendStr("F1T1"); // read Volts
 
