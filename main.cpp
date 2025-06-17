@@ -2,11 +2,9 @@
 
 #include "hpil.h"
 #include "send.h"
-#include "thermistor.h"
 #include "stdio.h"
 
-const char* getReading() {
-  ilSendStr("T1");
+char* getReading() {
   return ilGetData();
 }
 
@@ -19,7 +17,7 @@ void incrSeconds() {
     *pTime-- -= 10;
     if (++*pTime <= '5') break;
     *pTime-- -= 6;
-    if (*pTime <= '0') break;
+    if (*pTime <= '0') break; // space, ... off left end
     --pTime;  // over colon
   } // to 59:59:59 hours
 }
@@ -30,7 +28,7 @@ void dumpCalibrationSRAM() {
   ilSendStr("B2"); // binary Calibration constants out -- see bottom of HP 3468
   const char* calData = ilGetData();
 
-  // for "B3" restore
+  // string for "B3" restore
   for (uint16_t p = 0; p < MAX_RESPONSE_LEN; ++p) {
     if (!calData[p]) break; // end of string
     send(calData[p]);
@@ -38,6 +36,7 @@ void dumpCalibrationSRAM() {
   }
   send('\n');
 
+  // slightly more readable: offset, gain?
   for (uint16_t p = 0; p < MAX_RESPONSE_LEN; ++p) {
     if (!calData[p]) break; // end of string
     punctuation = true;
@@ -85,39 +84,73 @@ void dumpCalibrationSRAM() {
 */
   // 3478A calibration data decoding:
   // See https://tomverbeure.github.io/2022/12/02/HP3478A-Multimeter-Calibration-Data-Backup-and-Battery-Replacement.html
-  // "Wn" - read SRAM byte (1024 nibbles ?)
+}
 
-#if 0
-  send("\nTrying W command\n");
-  for (uint16_t sramAddr = 0; sramAddr <= 255; sramAddr++) {
-#if 0
-    ilCmd(LAD, 1);
-    ilCmd(DAB, 'W');
-    ilCmd(DAB, sramAddr);
-    ilCmd(END, '\n');
-#elif 0
-    char readSRAM[8] = "W";
-    itoa(sramAddr, readSRAM + 1, 10);
-    ilSendStr(readSRAM);
-    // no response
-#endif
-    send(ilGetData()[0]);
+uint32_t isqrt(uint32_t num) {
+  uint32_t res = 0;
+  uint32_t bit = 1L << (sizeof(num) * 8 - 2);
+  while (bit > num) bit >>= 2;  // bit starts at highest 4 ^ N <= num
+  while (bit) {
+    if (num >= res + bit) {
+      num -= res + bit;
+      res = (res >> 1) + bit;
+    } else res >>= 1;
+    bit >>= 2;
   }
-#endif
+  return res;
+}
+
+#define THERM_BETA    3950
+#define ZERO_KELVIN   273.15f
+#define THERM_T0      (25 + ZERO_KELVIN)
+#define R0            10000  // Ohms
+
+const uint8_t NumAvg = 16;
+
+int32_t milliDegreesC(uint32_t sumReadings) {
+  #define ROOT_X_SHIFT 15
+  #define LOG_X_SHIFT (2 * ROOT_X_SHIFT)
+  #define LOG_X_SCALE (1LL << LOG_X_SHIFT)
+
+  // x = LOG_X_SCALE * R / R0
+  uint32_t x = LOG_X_SCALE / NumAvg * sumReadings / 10 / R0;  // near LOG_X_SCALE (* 2 or / 2)
+
+  // Borchardts approximation: very good near 1.0; 0.83% error at 10 or 0.1
+  // ln(x) ~ 6 * (x - 1) / (x + 1 + 4 * sqrtfn(x));
+  int64_t  num = (int64_t)6 * (x - LOG_X_SCALE);
+  int64_t denom = x + LOG_X_SCALE + ((int64_t)isqrt(x) << (2 + ROOT_X_SHIFT));
+
+  // 1/T = 1/T0 + ln(R/R0) / THERM_BETA
+  #define SCALE (1LL << (64 - (3 + LOG_X_SHIFT)))
+  return 1000 * SCALE /
+      (SCALE / THERM_T0 + SCALE * num / THERM_BETA / denom)
+   - (int32_t)(1000 * ZERO_KELVIN);
 }
 
 void showTemperature() {
-  const uint8_t NumAvg = 16;
-  float sumReadings = 0;
-  for (uint8_t i = 0; i < NumAvg; ++i)
-    sumReadings += atof(getReading());  // no strtof() !
-  float temperature = degreesC(sumReadings / NumAvg);
-  static float lastTemperature = 25;
-  int deltaT = (int)((temperature - lastTemperature) * 100000);  // ~7 digits float precision
+  // Readings near " 0.99999E+4"
+  // 30K Ohms ~ 1C  3K ~ 55C so always E+4  6 digits
+
+  uint32_t sumReadings = 0;
+  uint8_t i = NumAvg;
+  while (1) {
+    char* reading = getReading();
+    if (reading[0] != ' ' || reading[2] != '.') {
+      send(i); send("!\n");
+      continue;
+    }
+    reading[2] = reading[1]; // make 6 digit integer
+    sumReadings += atol(reading + 2);
+    if (!--i) break;
+  }
+
+  int32_t milliDegC = milliDegreesC(sumReadings);
+  static int32_t last_milliDegC = 25 * 1000;
+  int deltaT = milliDegC - last_milliDegC;
+  last_milliDegC = milliDegC;
 
   char tempStr[20];
-  sprintf(tempStr, "D2%.4f%+dC\n", temperature, deltaT);
-  lastTemperature = temperature;
+  sprintf(tempStr, "D2%d.%03d%+dC\n", (int)(milliDegC / 1000), (int)(milliDegC % 1000), deltaT);
   ilSendStr(tempStr);
   send(tempStr+2);
 }
@@ -132,13 +165,15 @@ int main(void) {
   ilSendStr(timeStr);  // display compile time as version
   send(timeStr); send('\n');
 
-  if (1) dumpCalibrationSRAM();
+  if (0) dumpCalibrationSRAM();
 
   // ilSendStr("F1T1"); // read Volts
 
-  ilSendStr("F3T1"); // read 2-wire Ohms
-  while (1)
-    showTemperature();
+  if (1) {
+    ilSendStr("F3R3T1"); // 2-wire 30K Ohm range, internal trigger
+    while (1)
+      showTemperature();
+  }
 
   timeStr[10] += 2;
   while (1) {

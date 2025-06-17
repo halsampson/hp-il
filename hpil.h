@@ -58,4 +58,4 @@ typedef struct {
 void ilInit();
 void ilCmd(Frame cmd, uint8_t param = 0);
 void ilSendStr(const char* str, uint8_t addr = 1);
-const char* ilGetData(uint8_t addr = 1);
+char* ilGetData(uint8_t addr = 1);
