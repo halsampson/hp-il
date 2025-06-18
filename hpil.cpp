@@ -106,10 +106,11 @@ XferFrame recvFrame() {
   }
 }
 
-void waitForResponse() { // for early overlapped responses to RDY frameControl bits only
-  GIFR = _BV(PCIF); // clear receive pin change flag
+void waitForReceiveActive() { // for early overlapped responses to RDY frameControl bits only
   uint16_t rfcTimeout = 1;
-  while (!GIFR && ++rfcTimeout); // wait for any activity
+  while (!GIFR && ++rfcTimeout); // wait for any activity, including previous
+  if (!rfcTimeout)
+    send("Rcv timeout\n");
 }
 
 void waitForIdle() {
@@ -126,9 +127,12 @@ void ilCmd(Frame cmd, uint8_t param) {
   if (cmd.frameControl == CMD) {
     GIFR = _BV(PCIF); // clear receive pin change flag
     sendFrame(RFC); // check if device is Ready For Command
-    uint16_t rfcTimeout = 1;
-    while (!GIFR && ++rfcTimeout); // wait for any activity -- response can be overlapped
-    // beware noise coupled from transmit to receive --> waitForResponse or Idle after frame sent
+    waitForReceiveActive();  // response can be overlapped
+
+    if (1) { // in case noise coupled from transmit to receive --> waitForResponse AFTER frame sent
+      GIFR = _BV(PCIF); // clear receive pin change flag
+      waitForReceiveActive();
+    }
   }
 
   sendFrame(cmd, param);
@@ -136,7 +140,7 @@ void ilCmd(Frame cmd, uint8_t param) {
   switch (cmd.frameControl) {
     case RDY : // early, overlapped response based on just the 3 frameControl bits
       if (cmd.frameData != SDA.frameData)  // SDA replaced by response data
-        waitForResponse();
+        waitForReceiveActive();
       return;
     default : break;
   }
@@ -144,7 +148,7 @@ void ilCmd(Frame cmd, uint8_t param) {
   XferFrame echo = recvFrame();  // echo often long delayed processing before echo
 
 #if 0 // check looped echo
-  // LAD 4 20 gets previous extra data byte?
+  // LAD 4 20 times out
   if (cmd.frameControl == ENDcc) return; // ??
 
   if (echo.frameControl & (SRQ | EOI)) return; // TODO: handle SRQ, EOI
@@ -160,30 +164,38 @@ void ilCmd(Frame cmd, uint8_t param) {
 }
 
 void ilSendStr(const char* str, uint8_t addr) {
-  ilCmd(LAD, addr);
+  ilCmd(LAD, addr); // echo times out ! ? if already addressed?
   do ilCmd(DAB, *str); while (*++str);
   ilCmd(END, '\n');
 }
 
 char* ilGetData(uint8_t addr) {
   static char dataBuf[MAX_RESPONSE_LEN + 1]; // to hold at least 14 character reading
-  uint8_t dataBufIdx = 0;
-  ilCmd(TAD, addr);
-  ilCmd(SDA);  // replaced with data
+  XferFrame recvdFrame;
   do {
-    XferFrame recvdFrame = recvFrame();
-    dataBuf[dataBufIdx++] = recvdFrame.frameData;
-    switch (recvdFrame.frameControl) {
-      case DABcc :
-      case DAB_SRQ :
-        sendFrame(DAB, recvdFrame.frameData); break; // echoed data requests next byte
-      case ENDcc :
-      case END_SRQ :
-      default :
-        dataBuf[dataBufIdx] = 0;
-        return dataBuf;
-      // TODO : handle other cases ***
-    }
-  } while (dataBufIdx < sizeof(dataBuf));
+    uint8_t dataBufIdx = 0;
+    ilCmd(TAD, addr);
+    ilCmd(SDA);  // replaced with data
+    do {
+      recvdFrame = recvFrame();
+      dataBuf[dataBufIdx++] = recvdFrame.frameData;
+      switch (recvdFrame.frameControl) {
+        case DABcc :
+        case DAB_SRQ :
+          sendFrame(DAB, recvdFrame.frameData); break; // echoed data requests next byte
+        case IDY_SRQ : break; // asynch SRQ ? only after EAR ?? --> retry ? TODO
+        case ENDcc :
+        case END_SRQ :
+        // TODO : handle other cases
+        default :
+          if (dataBufIdx < 13) {
+            send("Short!: "); send(dataBufIdx); send((uint8_t)recvdFrame.frameControl); send('\n');
+            // normally Fc DAB_EOI (2)
+          }
+          dataBuf[dataBufIdx] = 0;
+          return dataBuf;
+      }
+    } while (dataBufIdx < sizeof(dataBuf) && recvdFrame.frameControl != IDY_SRQ);
+  } while (recvdFrame.frameControl == IDY_SRQ); // ?
   return dataBuf;
 }

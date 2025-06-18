@@ -127,6 +127,8 @@ int32_t milliDegreesC(uint32_t sumReadings) {
    - (int32_t)(1000 * ZERO_KELVIN);
 }
 
+uint16_t numReadings;
+
 void showTemperature() {
   // Resistor readings near " 0.99999E+4" = 10K Ohms
   //   30K Ohms ~ 1C .. 3K ~ 55C so always E+4  6 digits
@@ -135,8 +137,11 @@ void showTemperature() {
   uint8_t i = NumAvg;
   while (1) {
     char* reading = getReading();
-    if (reading[0] != ' ' || reading[2] != '.') {
-      send("Recv error\n"); // reading error
+    ++numReadings;
+    if (reading[0] != ' ' || reading[2] != '.') {      
+      send("Rcv error @ "); // reading error
+      send(numReadings);
+      send('\n');
       continue;
     }
     reading[2] = reading[1]; // make 6 digit integer
