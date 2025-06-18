@@ -136,7 +136,7 @@ void showTemperature() {
   while (1) {
     char* reading = getReading();
     if (reading[0] != ' ' || reading[2] != '.') {
-      send("Error: check signal levels\n"); // reading error
+      send("Recv error\n"); // reading error
       continue;
     }
     reading[2] = reading[1]; // make 6 digit integer

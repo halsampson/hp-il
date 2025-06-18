@@ -1,6 +1,7 @@
 #include "hpil.h"
 
 #include "message.c"
+#include "send.h"
 
 void ilInit() {
   DDRB |= ILOP | ILON; // output pins
@@ -106,21 +107,30 @@ XferFrame recvFrame() {
 }
 
 void waitForResponse() { // for early overlapped responses to RDY frameControl bits only
-  GIFR = _BV(PCIF); // clear pin change flag
+  GIFR = _BV(PCIF); // clear receive pin change flag
   uint16_t rfcTimeout = 1;
   while (!GIFR && ++rfcTimeout); // wait for any activity
+}
 
-  if (rfcTimeout)
-    while (1) { // wait for no activity for ~ a bit time
-      GIFR = _BV(PCIF); // clear pin change flag
-      uint8_t bitTimeout = MF_CPU / 1000000 * 2 / 4; // 2us, > 4 cycles
-      while (!GIFR && --bitTimeout);
-      if (!bitTimeout)
-        return;
-    }
+void waitForIdle() {
+  while (1) { // wait for no activity for ~ a bit time
+    GIFR = _BV(PCIF); // clear receive pin change flag
+    uint8_t bitTimeout = MF_CPU / 1000000 * 2 / 4; // 2us, > 4 cycles
+    while (!GIFR && --bitTimeout);
+    if (!bitTimeout)
+      return;
+  }
 }
 
 void ilCmd(Frame cmd, uint8_t param) {
+  if (cmd.frameControl == CMD) {
+    GIFR = _BV(PCIF); // clear receive pin change flag
+    sendFrame(RFC); // check if device is Ready For Command
+    uint16_t rfcTimeout = 1;
+    while (!GIFR && ++rfcTimeout); // wait for any activity -- response can be overlapped
+    // beware noise coupled from transmit to receive --> waitForResponse or Idle after frame sent
+  }
+
   sendFrame(cmd, param);
 
   switch (cmd.frameControl) {
@@ -131,12 +141,22 @@ void ilCmd(Frame cmd, uint8_t param) {
     default : break;
   }
 
-  recvFrame();  // often long delayed processing before echo
+  XferFrame echo = recvFrame();  // echo often long delayed processing before echo
 
-  // TODO: handle EOI, SRQ as needed
+#if 0 // check looped echo
+  // LAD 4 20 gets previous extra data byte?
+  if (cmd.frameControl == ENDcc) return; // ??
 
-  sendFrame(RFC);
-  waitForResponse();
+  if (echo.frameControl & (SRQ | EOI)) return; // TODO: handle SRQ, EOI
+
+  if (echo.frameControl != cmd.frameControl
+  ||  echo.frameData != (cmd.frameData | (param & cmd.paramMask))) {
+    send("Echo!:\n"); // AAD increments
+    send(' '); sendHex((uint8_t)cmd.frameControl); sendHex(cmd.frameData); send('\n');
+    send(' '); sendHex((uint8_t)echo.frameControl); sendHex(echo.frameData);
+    send('\n');
+  }
+#endif
 }
 
 void ilSendStr(const char* str, uint8_t addr) {

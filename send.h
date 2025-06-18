@@ -29,6 +29,7 @@ void send(const char* s);
 extern bool punctuation;
 
 void sendDec(int16_t n);
+void sendHex(uint8_t i);
 void sendHex(uint16_t i);
 void sendHex(uint32_t i);
 void send(int32_t i);

@@ -75,6 +75,9 @@ void sendHex(uint16_t i) {
   send(p);
 }
 
+void sendHex(uint8_t i) {
+  sendHex((uint16_t)i);
+}
 
 void sendDigit(uint8_t digit) {
   send((char)(digit + '0'));
