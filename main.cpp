@@ -113,11 +113,11 @@ int32_t milliDegreesC(uint32_t sumReadings) {
   #define LOG_X_SCALE (1LL << LOG_X_SHIFT)
 
   // x = LOG_X_SCALE * R / R0
-  uint32_t x = LOG_X_SCALE / NumAvg * sumReadings / 10 / R0;  // near LOG_X_SCALE (* 2 or / 2)
+  uint32_t x = LOG_X_SCALE / NumAvg * sumReadings / 10 / R0; // near LOG_X_SCALE (* 2 or / 2)
 
   // Borchardts approximation: very good near 1.0; 0.83% error at 10 or 0.1
   // ln(x) ~ 6 * (x - 1) / (x + 1 + 4 * sqrtfn(x));
-  int64_t  num = (int64_t)6 * (x - LOG_X_SCALE);
+  int64_t num = (int64_t)6 * (x - LOG_X_SCALE);
   int64_t denom = x + LOG_X_SCALE + ((int64_t)isqrt(x) << (2 + ROOT_X_SHIFT));
 
   // 1/T = 1/T0 + ln(R/R0) / THERM_BETA
@@ -128,15 +128,15 @@ int32_t milliDegreesC(uint32_t sumReadings) {
 }
 
 void showTemperature() {
-  // Readings near " 0.99999E+4"
-  // 30K Ohms ~ 1C  3K ~ 55C so always E+4  6 digits
+  // Resistor readings near " 0.99999E+4" = 10K Ohms
+  //   30K Ohms ~ 1C .. 3K ~ 55C so always E+4  6 digits
 
   uint32_t sumReadings = 0;
   uint8_t i = NumAvg;
   while (1) {
     char* reading = getReading();
     if (reading[0] != ' ' || reading[2] != '.') {
-      send(i); send("!\n");
+      send("Error: check signal levels\n"); // reading error
       continue;
     }
     reading[2] = reading[1]; // make 6 digit integer
@@ -185,5 +185,3 @@ int main(void) {
 
   ilCmd(GTL);
 }
-
-
