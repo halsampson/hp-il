@@ -4,12 +4,14 @@ Tested communicating with HP 3468B DMM: can set up, read measurements, and read 
 
 Tested using ATtiny85 DigiSpark, but can be easily ported to other MCUs.
 
-HP-IL cable interface circuit consists of 4 impedance matching resistors and a level-shifting diode to decode the 3 level pulses using 2 digital input pins (ILIP and ILIN) with ~200mV hysteresis.  ILOP and ILON are ~25 Ohm drive 5V digital output pins:
+HP-IL cable interface circuit consists of 3 impedance matching resistors and a level-shifting diode to decode the 3 level pulses using 2 digital input pins (ILIP and ILIN) with ~200mV hysteresis.  ILOP and ILON are ~25 Ohm drive 5V digital output pins.
+
+Works OK without 240 Ohm resistor on short (1 m) cable. A 91 Ohm diode pullup resistor worked better with a short, low DC resistance cable. Choose pullup resistor so that idle ILIP voltage is 0.47 * Vcc (mid Vin for ATTiny) + half Si diode drop (~0.72V / 2 for 1N4148).
 
 ```
 HP-IL In <-----------------v-- 59 Ohm ----< ILOP
                            |
-                        240 Ohm
+                        (240 Ohm)
                            |
 HP-IL In <-----------------^-- 59 Ohm ----< ILON
  (Ref: left)
