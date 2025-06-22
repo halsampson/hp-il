@@ -11,7 +11,7 @@ char* getReading() {
   return ilGetData();
 }
 
-char timeStr[] = "D2 " __TIME__;
+char timeStr[] = "D2" __TIME__;
 
 void incrSeconds() {
   char* pTime = timeStr + 3 + 8 - 1;
@@ -108,8 +108,8 @@ uint32_t isqrt(uint32_t num) {
 #define ROOT_X_SHIFT 15
 #define LOG_X_SHIFT (2 * ROOT_X_SHIFT)
 #define LOG_X_SCALE (1L << LOG_X_SHIFT)
-#define LOG_NUM_READINGS 4
 
+#define LOG_NUM_READINGS 7  // ~ 2 readings per sec --> ~ 1 minute report interval
 const uint8_t NumAvg = (1 << LOG_NUM_READINGS);
 
 #define SCALE_SHIFT (64 - (3 + LOG_X_SHIFT))
@@ -160,7 +160,7 @@ void showTemperature() {
     }
     sumReadings += atol(reading + 1);
 
-    if (++i == 16) {
+    if (++i == NumAvg) {
       scaledR = (uint64_t)sumReadings << (LOG_X_SHIFT - LOG_NUM_READINGS -1 -4);
       return;
     }
@@ -189,7 +189,7 @@ void showTemperature() {
 }
 
 int main(void) {
-  __builtin_avr_delay_cycles(MF_CPU); // allow for USB enumeration
+  __builtin_avr_delay_cycles(MF_CPU * 2); // allow for USB enumeration -- longer down tree
   send('\n');
   send(timeStr+2); send('\n');
 
@@ -201,8 +201,7 @@ int main(void) {
   ilSendStr("F3R3T1"); // 2-wire 30K Ohm range, internal trigger
   __builtin_avr_delay_cycles(MF_CPU / 2);
 
-  ilSendStr(timeStr);  // display compile time as version -- failing now - why???
-  __builtin_avr_delay_cycles(MF_CPU / 2);
+  ilSendStr(timeStr);  // display compile time as version
 
   if (0) dumpCalibrationSRAM();
 
