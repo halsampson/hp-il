@@ -184,6 +184,7 @@
       <Value>C:\Users\Admin\Documents\Atmel Studio\7.0\Common\Common\Debug</Value>
     </ListValues>
   </avrgcccpp.linker.libraries.LibrarySearchPaths>
+  <avrgcccpp.linker.miscellaneous.LinkerFlags>-u _printf_float</avrgcccpp.linker.miscellaneous.LinkerFlags>
   <avrgcccpp.assembler.general.IncludePaths>
     <ListValues>
       <Value>%24(PackRepoDir)\atmel\ATtiny_DFP\2.0.368\include\</Value>

@@ -11,7 +11,7 @@ const Frame END = {ENDcc, 0, 0xFF}; // data END
 // CoMmanD class
 
 // Addressed Command subGroup
-const Frame NUL = {CMD, 0, 0}; // NULl Frame
+const Frame NUL = {CMD, 0, 0};    // NULl Frame
 const Frame GTL = {CMD, 0x01, 0}; // Go To Local
 const Frame SDC = {CMD, 0x04, 0}; // Selected Device Clear
 const Frame PPD = {CMD, 0x05, 0}; // Parallel Poll Disable
@@ -36,13 +36,13 @@ const Frame LPD = {CMD, 0x9B, 0}; // Loop Power Down
 // Listen Address subGroup
 const Frame LAD = {CMD, 0x20, 31}; // Listen ADdress
 const Frame MLA = {CMD, 0x20, 31}; // My Listen Address
-const Frame UNL = {CMD, 0x3F, 0}; //UNListen
+const Frame UNL = {CMD, 0x3F, 0};  // UNListen
 
 // Talk Address subGroup
 const Frame TAD = {CMD, 0x40, 31}; // Talk ADdress
 const Frame MTA = {CMD, 0x40, 31}; // My Talk Address
 const Frame OTA = {CMD, 0x40, 31}; // Other Talk Address
-const Frame UNT = {CMD, 0x5F, 0}; // UNTalk
+const Frame UNT = {CMD, 0x5F, 0};  // UNTalk
 
 // Secondary Address subGroup
 const Frame SAD = {CMD, 0x60, 31}; // Secondary ADdress
@@ -58,7 +58,7 @@ const Frame RFC = {RDY, 0, 0}; // Ready For Command
 // Addressed Ready subGroup
 // End Of Transmission subSubGroup
 const Frame EOT = {RDY, 0x40, 0}; // End of Transmission
-const Frame ETO = {RDY, 0x40, 0}; // End of Transmission - Ok
+const Frame ETO = {RDY, 0x40, 0}; // End of Transmission - OK
 const Frame ETE = {RDY, 0x41, 0}; // End of Transmission - Error
 const Frame NRD = {RDY, 0x42, 0}; // Not Ready for Data
 
@@ -72,17 +72,17 @@ const Frame TCT = {RDY, 0x64, 0}; // Take ConTrol
 // Auto Address subGroup
 const Frame AAD = {RDY, 0x80, 31}; // Auto ADdress
 const Frame NAA = {RDY, 0x80, 31}; // Next Auto Address
-const Frame IAA = {RDY, 0x9F, 0}; // Illegal Auto Address
+const Frame IAA = {RDY, 0x9F, 0};  // Illegal Auto Address
 
 const Frame AEP = {RDY, 0xA0, 31}; // Auto Extended Primary
-const Frame IEP = {RDY, 0xBF, 0}; // Illegal Extended Primary
+const Frame IEP = {RDY, 0xBF, 0};  // Illegal Extended Primary
 
-const Frame ZES = {RDY, 0xC0, 0}; // Zero Extended Secondary
+const Frame ZES = {RDY, 0xC0, 0};  // Zero Extended Secondary
 const Frame AES = {RDY, 0xC0, 31}; // Auto Extended Secondary
 const Frame NES = {RDY, 0xC0, 31}; // Next Extended Secondary
-const Frame IES = {RDY, 0xDF, 0}; // Illegal Extended Secondary
+const Frame IES = {RDY, 0xDF, 0};  // Illegal Extended Secondary
 
 const Frame AMP = {RDY, 0xE0, 31}; // Auto Multiple Primary
 const Frame NMP = {RDY, 0xE0, 31}; // Next Multiple Primary
-const Frame IMP = {RDY, 0xFF, 0}; // Illegal Multiple Primary
+const Frame IMP = {RDY, 0xFF, 0};  // Illegal Multiple Primary
 

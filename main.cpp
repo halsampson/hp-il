@@ -1,8 +1,11 @@
 // Tests of HP-IL interface commands
 
+// #pragma GCC poison float double   // float imported with atol, ... !!!
+
 #include "hpil.h"
 #include "send.h"
 #include "stdio.h"
+
 
 char* getReading() {
   return ilGetData();
@@ -22,27 +25,22 @@ void incrSeconds() {
   } // to 59:59:59 hours
 }
 
-void dumpCalibrationSRAM() {
+void dumpCalibrationSRAM(bool format = false) {
   send("Calibration data:\n");
 
   ilSendStr("B2"); // binary Calibration constants out -- see bottom of HP 3468
-  const char* calData = ilGetData();
-
-  // string for "B3" restore
-  for (uint16_t p = 0; p < MAX_RESPONSE_LEN; ++p) {
-    if (!calData[p]) break; // end of string
-    send(calData[p]);
-    if (p % 16 == 15) send('\n');
-  }
-  send('\n');
-
-  // slightly more readable: offset, gain?
-  for (uint16_t p = 0; p < MAX_RESPONSE_LEN; ++p) {
-    if (!calData[p]) break; // end of string
-    punctuation = true;
-    sendHex((uint16_t)(calData[p] - 64)); // nibbles
-    if (p % 16 == 6) send(' ');
-    if (p % 16 == 15) send('\n');
+  while (1) {  // string for "B3" restore
+    char* calData = ilGetData();
+    if (*calData < '@') break;
+    for (uint16_t p = 0; p < MAX_RESPONSE_LEN; ++p) {
+      if (!calData[p]) break;
+      if (format) {
+        punctuation = true;
+        sendHex((uint16_t)(calData[p] - 64)); // nibbles
+        if (p % 16 == 6) send(' ');
+      } else send(calData[p]);
+      if (p % 16 == 15) send('\n');
+    }
   }
   send('\n');
 
@@ -105,80 +103,113 @@ uint32_t isqrt(uint32_t num) {
 #define THERM_T0      (25 + ZERO_KELVIN)
 #define R0            10000  // Ohms
 
-const uint8_t NumAvg = 16;
+#define RESOLUTION    1000  // millliDegrees
+
+#define ROOT_X_SHIFT 15
+#define LOG_X_SHIFT (2 * ROOT_X_SHIFT)
+#define LOG_X_SCALE (1L << LOG_X_SHIFT)
+#define LOG_NUM_READINGS 4
+
+const uint8_t NumAvg = (1 << LOG_NUM_READINGS);
+
+#define SCALE_SHIFT (64 - (3 + LOG_X_SHIFT))
+const uint32_t ScaledT0 = (uint32_t)((1UL << SCALE_SHIFT) / THERM_T0);
+const int32_t DegreesKtoC = (int32_t)(RESOLUTION * ZERO_KELVIN);
 
 int32_t milliDegreesC(uint32_t sumReadings) {
-  #define ROOT_X_SHIFT 15
-  #define LOG_X_SHIFT (2 * ROOT_X_SHIFT)
-  #define LOG_X_SCALE (1LL << LOG_X_SHIFT)
-
-  // x = LOG_X_SCALE * R / R0
-  uint32_t x = LOG_X_SCALE / NumAvg * sumReadings / 10 / R0; // near LOG_X_SCALE (* 2 or / 2)
+  // scaledRratio = LOG_X_SCALE * R / R0
+  uint32_t scaledRratio = LOG_X_SCALE / NumAvg * sumReadings / 10 / R0; // near LOG_X_SCALE (* 2 or / 2)
 
   // Borchardts approximation: very good near 1.0; 0.83% error at 10 or 0.1
-  // ln(x) ~ 6 * (x - 1) / (x + 1 + 4 * sqrtfn(x));
-  int64_t num = (int64_t)6 * (x - LOG_X_SCALE);
-  int64_t denom = x + LOG_X_SCALE + ((int64_t)isqrt(x) << (2 + ROOT_X_SHIFT));
+  // ln(scaledRratio) ~ 6 * (scaledRratio - 1) / (scaledRratio + 1 + 4 * sqrtfn(scaledRratio));
+  int64_t num = (int64_t)6 * ((int64_t)scaledRratio - LOG_X_SCALE);
+  int64_t denom = scaledRratio + LOG_X_SCALE + ((int64_t)isqrt(scaledRratio) << (2 + ROOT_X_SHIFT));
 
   // 1/T = 1/T0 + ln(R/R0) / THERM_BETA
-  #define SCALE (1LL << (64 - (3 + LOG_X_SHIFT)))
-  return 1000 * SCALE /
-      (SCALE / THERM_T0 + SCALE * num / THERM_BETA / denom)
-   - (int32_t)(1000 * ZERO_KELVIN);
+  return ((int64_t)RESOLUTION << SCALE_SHIFT) /
+      (ScaledT0 + (num << SCALE_SHIFT) / THERM_BETA / denom)
+   - DegreesKtoC;
 }
 
-uint16_t numReadings;
 
 void showTemperature() {
   // Resistor readings near " 0.99999E+4" = 10K Ohms
   //   30K Ohms ~ 1C .. 3K ~ 55C so always E+4  6 digits
 
+  static uint64_t scaledR;
+  static uint32_t scaledRratio, sqrtRatio;
+  static int64_t num, denom;
+  static int64_t tempRes;
+  static int32_t milliDegC, lastMilliDeg;
+  static char tempStr[20] = "D2";
+
   uint32_t sumReadings = 0;
-  uint8_t i = NumAvg;
+  uint8_t i = 0;
   while (1) {
-    char* reading = getReading();
-    ++numReadings;
-    if (reading[0] != ' ' || reading[2] != '.') {      
-      send("Rcv error @ "); // reading error
-      send(numReadings);
+    char* reading = ilGetData();
+    if (reading[2] == '.') {
+      reading[2] = reading[1]; // make 6 digit integer
+      reading[1] = '0';
+    } else if (reading[1] == '.')  // occasional dropped leading space (resistance "sign") -- SDA/DAB overlap?
+      reading[1] = reading[0];
+    else {
+      send("Rcv err: ");
+      send(reading);
       send('\n');
       continue;
     }
-    reading[2] = reading[1]; // make 6 digit integer
-    sumReadings += atol(reading + 2);
-    if (!--i) break;
+    sumReadings += atol(reading + 1);
+
+    switch(++i) { // calculations distributed between readings
+      case 16 : scaledR = (uint64_t)sumReadings << (LOG_X_SHIFT - LOG_NUM_READINGS -1 -4); return;
+
+      case 2 : scaledRratio = scaledR / (10L * R0 / 32); break;
+      case 3 : num = 6 * ((int64_t)scaledRratio - LOG_X_SCALE); break;
+      case 4 : sqrtRatio = isqrt(scaledRratio); break;
+      case 5 : denom = (int64_t)scaledRratio + LOG_X_SCALE + ((int64_t)sqrtRatio << (2 + ROOT_X_SHIFT)); break;
+
+      case 6 : tempRes = num << SCALE_SHIFT; break;
+      case 7 : tempRes /= THERM_BETA; break;
+      case 8 : tempRes /= denom; break;
+      case 9 : tempRes += ScaledT0; break;
+      case 10 : milliDegC = ((int64_t)RESOLUTION << SCALE_SHIFT) / tempRes; break;
+      case 11 : milliDegC -= DegreesKtoC; break;
+
+      case 12 : sprintf(tempStr + 2, "%d.%03d%+dC\n", (int)(milliDegC / RESOLUTION), (int)(abs(milliDegC) % RESOLUTION), (int)(milliDegC - lastMilliDeg)); break;
+          // sprintf uses ~2000 bytes even with -u _printf_float   (atol also brings in float~!)
+          // --> could output integer and insert decimal point
+      case 13 : send(tempStr+2); break;
+      case 14 : ilSendStr(tempStr); break;
+      case 15 : lastMilliDeg = milliDegC; break;
+    }
   }
-
-  int32_t milliDegC = milliDegreesC(sumReadings);
-  static int32_t last_milliDegC = 25 * 1000;
-  int deltaT = milliDegC - last_milliDegC;
-  last_milliDegC = milliDegC;
-
-  char tempStr[20];
-  sprintf(tempStr, "D2%d.%03d%+dC\n", (int)(milliDegC / 1000), (int)(milliDegC % 1000), deltaT);
-  ilSendStr(tempStr);
-  send(tempStr+2);
 }
 
 int main(void) {
-  ilInit();
+  __builtin_avr_delay_cycles(MF_CPU); // allow for USB enumeration
+  send('\n');
+  send(timeStr+2); send('\n');
 
-  ilCmd(REN);
+  ilInit();
   ilCmd(DCL);
+  ilCmd(REN);
   ilCmd(AAD, 1);
 
-  ilSendStr(timeStr);  // display compile time as version
-  send(timeStr); send('\n');
+  ilSendStr("F3R3T1"); // 2-wire 30K Ohm range, internal trigger
+  __builtin_avr_delay_cycles(MF_CPU / 2);
+
+  ilSendStr(timeStr);  // display compile time as version -- failing now - why???
+  __builtin_avr_delay_cycles(MF_CPU / 2);
 
   if (0) dumpCalibrationSRAM();
-
-  // ilSendStr("F1T1"); // read Volts
 
   if (1) {
     ilSendStr("F3R3T1"); // 2-wire 30K Ohm range, internal trigger
     while (1)
       showTemperature();
   }
+
+  // ilSendStr("F1T1"); // read Volts
 
   timeStr[10] += 2;
   while (1) {

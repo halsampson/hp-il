@@ -145,6 +145,10 @@ void send(uint32_t i) {
   send(ultoa(i, buf, 10));
 }
 
+void send(uint8_t i) {
+  sendDec(i);
+}
+
 #ifdef RxDbit
 
 // receive

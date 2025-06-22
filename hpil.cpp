@@ -59,11 +59,14 @@ void zeroSync() {
 void sendFrame(Frame cmd, uint8_t param = 0) {
   // if (param & ~cmd.paramMask) while(1);  // error check
 
+  // GIFR = _BV(PCIF); // clear receive pin change flag
+
   uint16_t sendBits = (uint16_t)cmd.frameControl << 8 | cmd.frameData | (param & cmd.paramMask);
 	cmd.frameControl & CMD ? oneSync() : zeroSync();
   for (uint8_t i = 2 + 8; i--; ) {
 		sendBits & 0x200 ? one() : zero();  // MSB first
     sendBits <<= 1;
+    // if (GIFR) break;  // early reply to RDY class -- start recvFrame ASAP ??
   }
 }
 
@@ -94,7 +97,7 @@ XferFrame recvFrame() {
   while ((dataBit = state()) == Idle && --frameTimeout);
 
   while (1) {
-    while (state() != Idle || state() != Idle);  // filter transitions thru Idle
+    while (state() != Idle || state() != Idle);  // filter transitions thru Idle -- can get stuck here with no/bad connection  TODO
     // Idle -- end of bit
     data |= dataBit & 1;
     if (!--bits)
@@ -106,11 +109,14 @@ XferFrame recvFrame() {
   }
 }
 
-void waitForReceiveActive() { // for early overlapped responses to RDY frameControl bits only
+bool waitForReceiveActive() { // for early overlapped responses to RDY frameControl bits only
   uint16_t rfcTimeout = 1;
   while (!GIFR && ++rfcTimeout); // wait for any activity, including previous
-  if (!rfcTimeout)
+  if (!rfcTimeout) {
     send("Rcv timeout\n");
+    return false;
+  }
+  return true;
 }
 
 void waitForIdle() {
@@ -124,12 +130,14 @@ void waitForIdle() {
 }
 
 void ilCmd(Frame cmd, uint8_t param) {
-  if (cmd.frameControl == CMD) {
+  if (cmd.frameControl == CMD
+  || (cmd.frameControl == RDY && param == SDA.frameData)) {
+    // ? other cases needing RFC first? TODO
     GIFR = _BV(PCIF); // clear receive pin change flag
     sendFrame(RFC); // check if device is Ready For Command
-    waitForReceiveActive();  // response can be overlapped
+    // response may be overlapped with sent frame!
 
-    if (1) { // in case noise coupled from transmit to receive --> waitForResponse AFTER frame sent
+    if (waitForReceiveActive()) { // in case noise coupled from transmit to receive --> waitForResponse AFTER frame sent
       GIFR = _BV(PCIF); // clear receive pin change flag
       waitForReceiveActive();
     }
@@ -139,7 +147,7 @@ void ilCmd(Frame cmd, uint8_t param) {
 
   switch (cmd.frameControl) {
     case RDY : // early, overlapped response based on just the 3 frameControl bits
-      if (cmd.frameData != SDA.frameData)  // SDA replaced by response data
+      if (cmd.frameData != SDA.frameData)  // SDA replaced by response data -- may overlap sent SDA frame!!  TODO
         waitForReceiveActive();
       return;
     default : break;
@@ -164,16 +172,21 @@ void ilCmd(Frame cmd, uint8_t param) {
 }
 
 void ilSendStr(const char* str, uint8_t addr) {
-  ilCmd(LAD, addr); // echo times out ! ? if already addressed?
-  do ilCmd(DAB, *str); while (*++str);
-  ilCmd(END, '\n');
+  ilCmd(UNL);
+  ilCmd(LAD, addr); // echo times out if already addressed?
+  ilCmd(NOP);
+
+  do ilCmd(DAB, *str); while (*++str); // synch via echo
+  ilCmd(END, '\n'); // echoed with ETO
 }
 
+
 char* ilGetData(uint8_t addr) {
-  static char dataBuf[MAX_RESPONSE_LEN + 1]; // to hold at least 14 character reading
+  static char dataBuf[MAX_RESPONSE_LEN + 1]; // to hold at least 14 character reading + CRLF + NUL
   XferFrame recvdFrame;
+  uint16_t dataBufIdx;
   do {
-    uint8_t dataBufIdx = 0;
+    dataBufIdx = 0;
     ilCmd(TAD, addr);
     ilCmd(SDA);  // replaced with data
     do {
@@ -183,19 +196,26 @@ char* ilGetData(uint8_t addr) {
         case DABcc :
         case DAB_SRQ :
           sendFrame(DAB, recvdFrame.frameData); break; // echoed data requests next byte
-        case IDY_SRQ : break; // asynch SRQ ? only after EAR ?? --> retry ? TODO
+
+        case RDY : --dataBufIdx; // response to RFC
+        case IDY_SRQ :
+          break; // asynch SRQ ? only after EAR ?? --> retry ? TODO
+
         case ENDcc :
         case END_SRQ :
+          sendFrame(ETO);
         // TODO : handle other cases
         default :
-          if (dataBufIdx < 13) {
+          if (dataBufIdx < 12) { // for readings, less initial character
             send("Short!: "); send(dataBufIdx); send((uint8_t)recvdFrame.frameControl); send('\n');
             // normally Fc DAB_EOI (2)
           }
           dataBuf[dataBufIdx] = 0;
           return dataBuf;
       }
-    } while (dataBufIdx < sizeof(dataBuf) && recvdFrame.frameControl != IDY_SRQ);
+    } while (dataBufIdx < MAX_RESPONSE_LEN && recvdFrame.frameControl != IDY_SRQ);
   } while (recvdFrame.frameControl == IDY_SRQ); // ?
+  
+  dataBuf[dataBufIdx] = 0;
   return dataBuf;
 }
