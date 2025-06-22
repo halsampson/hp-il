@@ -53,7 +53,7 @@ typedef struct {
 
 #include "message.c"
 
-#define MAX_RESPONSE_LEN 32 
+#define MAX_RESPONSE_LEN 16
 
 void ilInit();
 void ilCmd(Frame cmd, uint8_t param = 0);

@@ -103,7 +103,7 @@ uint32_t isqrt(uint32_t num) {
 #define THERM_T0      (25 + ZERO_KELVIN)
 #define R0            10000  // Ohms
 
-#define RESOLUTION    1000  // millliDegrees
+#define RESOLUTION    1000   // milliDegrees
 
 #define ROOT_X_SHIFT 15
 #define LOG_X_SHIFT (2 * ROOT_X_SHIFT)
@@ -118,7 +118,7 @@ const int32_t DegreesKtoC = (int32_t)(RESOLUTION * ZERO_KELVIN);
 
 int32_t milliDegreesC(uint32_t sumReadings) {
   // scaledRratio = LOG_X_SCALE * R / R0
-  uint32_t scaledRratio = LOG_X_SCALE / NumAvg * sumReadings / 10 / R0; // near LOG_X_SCALE (* 2 or / 2)
+  uint32_t scaledRratio = ((uint64_t)sumReadings << (LOG_X_SHIFT - LOG_NUM_READINGS -1 -4)) / (10L * R0 / 32); // near LOG_X_SCALE (* 2 or / 2)
 
   // Borchardts approximation: very good near 1.0; 0.83% error at 10 or 0.1
   // ln(scaledRratio) ~ 6 * (scaledRratio - 1) / (scaledRratio + 1 + 4 * sqrtfn(scaledRratio));
@@ -160,9 +160,12 @@ void showTemperature() {
     }
     sumReadings += atol(reading + 1);
 
-    switch(++i) { // calculations distributed between readings
-      case 16 : scaledR = (uint64_t)sumReadings << (LOG_X_SHIFT - LOG_NUM_READINGS -1 -4); return;
+    if (++i == 16) {
+      scaledR = (uint64_t)sumReadings << (LOG_X_SHIFT - LOG_NUM_READINGS -1 -4);
+      return;
+    }
 
+    if (scaledR) switch(i) { // calculations distributed between readings
       case 2 : scaledRratio = scaledR / (10L * R0 / 32); break;
       case 3 : num = 6 * ((int64_t)scaledRratio - LOG_X_SCALE); break;
       case 4 : sqrtRatio = isqrt(scaledRratio); break;

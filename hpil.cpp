@@ -154,6 +154,8 @@ void ilCmd(Frame cmd, uint8_t param) {
   }
 
   XferFrame echo = recvFrame();  // echo often long delayed processing before echo
+  if (echo.frameControl & SRQ)
+    sendFrame(NOP); // UCG to clear service request  TODO
 
 #if 0 // check looped echo
   // LAD 4 20 times out
@@ -184,7 +186,7 @@ void ilSendStr(const char* str, uint8_t addr) {
 char* ilGetData(uint8_t addr) {
   static char dataBuf[MAX_RESPONSE_LEN + 1]; // to hold at least 14 character reading + CRLF + NUL
   XferFrame recvdFrame;
-  uint16_t dataBufIdx;
+  int16_t dataBufIdx;
   do {
     dataBufIdx = 0;
     ilCmd(TAD, addr);
@@ -197,25 +199,29 @@ char* ilGetData(uint8_t addr) {
         case DAB_SRQ :
           sendFrame(DAB, recvdFrame.frameData); break; // echoed data requests next byte
 
-        case RDY : --dataBufIdx; // response to RFC
-        case IDY_SRQ :
-          break; // asynch SRQ ? only after EAR ?? --> retry ? TODO
+        case RDY : --dataBufIdx; break; // initial response to RFC
+
+        case IDY_SRQ :  // asynch SRQ should only occur after EAR?
+          // send("I_S "); // preceeds Rcv timeout  TODO
+          sendFrame(NOP); // must be UCG
+          dataBufIdx = -1; // retry
+          break;
 
         case ENDcc :
         case END_SRQ :
           sendFrame(ETO);
         // TODO : handle other cases
         default :
-          if (dataBufIdx < 12) { // for readings, less initial character
+          if (dataBufIdx < 12) { // for readings, less initial character dropped
             send("Short!: "); send(dataBufIdx); send((uint8_t)recvdFrame.frameControl); send('\n');
             // normally Fc DAB_EOI (2)
           }
           dataBuf[dataBufIdx] = 0;
           return dataBuf;
       }
-    } while (dataBufIdx < MAX_RESPONSE_LEN && recvdFrame.frameControl != IDY_SRQ);
-  } while (recvdFrame.frameControl == IDY_SRQ); // ?
-  
+    } while ((uint16_t)dataBufIdx < MAX_RESPONSE_LEN);
+  } while (dataBufIdx < 0); // retry
+
   dataBuf[dataBufIdx] = 0;
   return dataBuf;
 }
