@@ -198,7 +198,7 @@ int main(void) {
   ilCmd(REN);
   ilCmd(AAD, 1);
 
-  ilSendStr("F3R3T1"); // 2-wire 30K Ohm range, internal trigger
+  ilSendStr("M00F3R3T1"); // mask all SRQs off; 2-wire 30K Ohm range, internal trigger
   __builtin_avr_delay_cycles(MF_CPU / 2);
 
   ilSendStr(timeStr);  // display compile time as version

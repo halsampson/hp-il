@@ -195,8 +195,10 @@ char* ilGetData(uint8_t addr) {
         case DAB_SRQ :
           sendFrame(DAB, recvdFrame.frameData); break; // echoed data requests next byte
 
-        case RDY : --dataBufIdx; break; // initial response to RFC
+        case RDY : --dataBufIdx; break; // initial response to RFC?
 
+        case CMD :   // shouldn't occur?
+        case IDYcc : // ??
         case IDY_SRQ :  // asynch SRQ should only occur after EAR?
           sendFrame(NOP); // clear SRQ -- must be from UCG
           dataBufIdx = -1; // retry
@@ -206,8 +208,6 @@ char* ilGetData(uint8_t addr) {
         case END_SRQ :
           sendFrame(ETO);
           sendFrame(NOP); // clear SRQ
-        // TODO : handle other cases
-        default :
           if (dataBufIdx < 12) { // for readings, less initial character dropped
             send("Short!: "); send(dataBufIdx); send((uint8_t)recvdFrame.frameControl); send('\n');
             // normally Fc DAB_EOI (2)
