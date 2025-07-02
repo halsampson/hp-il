@@ -5,6 +5,7 @@
 #include "hpil.h"
 #include "send.h"
 #include "stdio.h"
+#include <avr/io.h>
 
 
 char* getReading() {
@@ -25,24 +26,106 @@ void incrSeconds() {
   } // to 59:59:59 hours
 }
 
-void dumpCalibrationSRAM(bool format = false) {
-  send("Calibration data:\n");
+const char* RangeStr[16] = {  // __flash only in C
+  "",
+  "300mV",
+  "3V",
+  "30V",
+  "300V",
+  "ACV",
+  "300R",
+  "3KR",
+  "30KR",
+  "300KR",
+  "3MR",
+  "30MR",
+  "3A",
+  "", "", ""
+};
 
+typedef union {
+  struct {
+    uint8_t offset[7]; // BCD
+    uint8_t gain[5];   // BCD signed nibbles
+    uint8_t columnParity[2];
+    uint8_t rowParity[2];
+  };
+  char columnRow[2][6];
+  char rawData[16];
+} CalData;  // only LS nibbles are data
+
+void printRawCalData() {
   ilSendStr("B2"); // binary Calibration constants out -- see bottom of HP 3468
   while (1) {  // string for "B3" restore
     char* calData = ilGetData();
-    if (*calData < '@') break;
-    for (uint16_t p = 0; p < MAX_RESPONSE_LEN; ++p) {
-      if (!calData[p]) break;
-      if (format) {
-        punctuation = true;
-        sendHex((uint16_t)(calData[p] - 64)); // nibbles
-        if (p % 16 == 6) send(' ');
-      } else send(calData[p]);
-      if (p % 16 == 15) send('\n');
-    }
+    uint8_t p = MAX_RESPONSE_LEN;  // 16
+    do {
+      if (*calData < '@') {
+        send('\n');
+        return;
+      }
+      send(*calData++);
+    } while (--p);
+    send('\n');
   }
-  send('\n');
+}
+
+
+void dumpCalibrationSRAM() {
+  send("Calibration data:\n");
+  printRawCalData();
+
+  ilSendStr("B2"); // binary Calibration constants out -- see bottom of HP 3468
+  for (uint8_t idx = 0; idx < 16; ++idx) {
+    CalData* calData = (CalData*)ilGetData();
+    if (!RangeStr[idx][0]) continue;
+    send(RangeStr[idx]); send ('\t');
+
+    // check column parity C D
+    for (uint8_t column = 0; column < 2; ++column) {
+      uint8_t parity = 0xF; // odd
+      for (uint8_t row = 0; row < 6; ++row)
+        parity ^= calData->columnRow[column][row];
+      parity ^= calData->columnParity[column];
+      if (parity & 0xF) { // should be 0
+        send("col parity! ");
+        sendHex((uint8_t)(parity & 0xF));
+      }
+    }
+    // row parity could be used to correct single bit errors
+    const uint8_t RowParity[16] = {0,1,1,0,1,0,0,1, 1,0,0,1, 0,1,1,0};
+    uint8_t rowParity = 0;
+    for (uint8_t row = 0; row < 6; ++row) {
+      rowParity |= RowParity[calData->columnRow[0][row] & 0xF] ^ RowParity[calData->columnRow[1][row] & 0xF] ^ 1;
+      rowParity <<= 1;
+    }
+    rowParity |= RowParity[calData->columnParity[0] & 0xF] ^ RowParity[calData->columnParity[1] & 0xF] ^ 1;
+    rowParity <<= 1;
+    rowParity |= RowParity[calData->rowParity[0] & 0xF] ^ RowParity[calData->rowParity[1] & 0xC] ^ 1;
+
+    if (rowParity >> 4 != (calData->rowParity[0] & 0xF)
+     || (rowParity & 0xF) != (calData->rowParity[1] & 0xF))
+      send("row parity!");
+
+
+    // TODO: calc gain
+
+    send("gain"); send('\t');
+
+    calData->gain[0] = 0; // terminate offset string
+    for (uint8_t p = sizeof(calData->offset); p--;)
+      calData->offset[p] -= '@' - '0'; // convert to BCD ASCII
+    int32_t offset = atol(calData->rawData);
+    if (offset > 5000000)
+      offset -= 10000000;
+    send(offset);
+
+    send('\n');
+  }
+
+
+// Gain signed BCD nibbles: https://www.eevblog.com/forum/repair/hp-3478a-how-to-readwrite-cal-sram/msg1966463/#msg1966463
+// Parity, SBEC: https://www.hpmuseum.org/forum/thread-8061-post-190013.html#pid190013
 
 /*
 3468B Calibration data:
@@ -203,7 +286,8 @@ int main(void) {
 
   ilSendStr(timeStr);  // display compile time as version
 
-  if (0) dumpCalibrationSRAM();
+  dumpCalibrationSRAM();
+
 
   if (1) {
     ilSendStr("F3R3T1"); // 2-wire 30K Ohm range, internal trigger
