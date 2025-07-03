@@ -7,25 +7,6 @@
 #include "stdio.h"
 #include <avr/io.h>
 
-
-char* getReading() {
-  return ilGetData();
-}
-
-char timeStr[] = "D2" __TIME__;
-
-void incrSeconds() {
-  char* pTime = timeStr + 3 + 8 - 1;
-  while (1) {
-    if (++*pTime <= '9') break;
-    *pTime-- -= 10;
-    if (++*pTime <= '5') break;
-    *pTime-- -= 6;
-    if (*pTime <= '0') break; // space, ... off left end
-    --pTime;  // over colon
-  } // to 59:59:59 hours
-}
-
 void sendRawCalData() {
   ilSendStr("B2"); // binary Calibration constants out -- see bottom of HP 3468
   while (1) {  // string for "B3" restore
@@ -49,12 +30,12 @@ const char* RangeStr[16] = {  // AVR Harvard __flash only in C
   "30V",
   "300V",
   "ACV",
-  "300R",
-  "3KR",
-  "30KR",
-  "300KR",
-  "3MR",
-  "30MR",
+  "300Ohm",
+  "3kOhm",
+  "30kOhm",
+  "300kOhm",
+  "3 MOhm",
+  "30 MOhm",
   "3A",
   "", "", ""
 };
@@ -113,15 +94,16 @@ inline uint32_t getGain(CalData* calData) { // 0.911112 .. 1.077777
     if (gainDigit >= 8) gainDigit -= 16;
     gain += gainDigit;
   }
-  if (gain < 1000000) send(' ');
   return gain;
 }
 
 inline int32_t getOffset(CalData* calData) {
   for (uint8_t p = sizeof(calData->offset); p--;)
     calData->offset[p] += '0'; // convert to BCD ASCII
-  calData->gain[0] = 0; // terminate offset string - LAST!!
+  uint8_t gain0 = calData->gain[0];
+  calData->gain[0] = 0; // terminate offset string
   int32_t offset = atol(calData->rawData);
+  calData->gain[0] = gain0; // restore
   if (offset > 5000000)
     offset -= 10000000;
   return offset;
@@ -130,6 +112,8 @@ inline int32_t getOffset(CalData* calData) {
 void dumpCalibrationSRAM() {
   send("Calibration data:\n");
   sendRawCalData();
+
+  send("\nRange\tOffset\tGain\n");
 
   // interpret calibration data:
   ilSendStr("B2"); // binary Calibration constants out -- see bottom of HP 3468
@@ -142,8 +126,17 @@ void dumpCalibrationSRAM() {
       calData->rawData[p] &= 0xF; // leave just data nibbles
 
     checkParity(calData);
-    send(getGain(calData)); send('\t');
-    send(getOffset(calData)); // LAST (sets gain[0] = 0)
+    send(getOffset(calData)); send('\t');
+    uint32_t gain = getGain(calData);
+    if (gain < 1000000) { // kludge to avoid floating point
+      send("0.");
+      send(gain);
+    } else {
+      send('1');
+      send(gain);
+      send("\b\b\b\b\b\b\b.");
+    }
+
     send('\n');
   }
 
@@ -166,20 +159,19 @@ void dumpCalibrationSRAM() {
  @@@@@@@@@@@@@@@@
  @@@@@@@@@@@@@@@@
 
-Range      Gain Offset
-300mV    991352 -14
-3V       991498 -2
-30V      989885 5
-300V     990030 0
-ACV      991359 1726
-300R    1001311 594
-3KR     1001440 57
-30KR    1001276 6
-300KR   1001274 0
-3MR     1001271 -1
-30MR    1000654 -3
-3A       993203 16
-
+Range   Offset  Gain
+300mV   -14     0.991352
+3V      -2      0.991498
+30V     5       0.989885
+300V    0       0.990030
+ACV     1726    0.991359
+300Ohm  594     1.001311
+3kOhm   57      1.001440
+30kOhm  6       1.001276
+300kOhm 0       1.001274
+3 MOhm  -1      1.001271
+30 MOhm -3      1.000654
+3A      16      0.993203
 */
 }
 
@@ -287,8 +279,22 @@ void showTemperature() {
   }
 }
 
+char timeStr[] = "D2" __TIME__;
+
+void incrSeconds() {
+  char* pTime = timeStr + 3 + 8 - 1;
+  while (1) {
+    if (++*pTime <= '9') break;
+    *pTime-- -= 10;
+    if (++*pTime <= '5') break;
+    *pTime-- -= 6;
+    if (*pTime <= '0') break; // space, ... off left end
+    --pTime;  // over colon
+  } // to 59:59:59 hours
+}
+
 int main(void) {
-  __builtin_avr_delay_cycles(MF_CPU * 2); // allow for USB enumeration -- longer down tree
+  __builtin_avr_delay_cycles(MF_CPU * 2); // allow for USB enumeration -- longer at end of tree
   send('\n');
   send(timeStr+2); send('\n');
 
@@ -298,7 +304,7 @@ int main(void) {
   ilCmd(AAD, 1);
 
   ilSendStr("M00F3R3T1"); // mask all SRQs off; 2-wire 30K Ohm range, internal trigger
-  __builtin_avr_delay_cycles(MF_CPU / 2);
+  __builtin_avr_delay_cycles(MF_CPU / 2); // to see range setting
 
   ilSendStr(timeStr);  // display compile time as version
 
@@ -316,7 +322,7 @@ int main(void) {
   while (1) {
     incrSeconds();
     ilSendStr(timeStr);
-    send(getReading());  // 2 readings per sec @ 5 1/2 digits -- poor clock
+    send(ilGetData());  // ~2 readings per sec @ 5 1/2 digits -- poor clock
     __builtin_avr_delay_cycles(MF_CPU / 2); // adjust
   }
 

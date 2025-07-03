@@ -30,13 +30,8 @@ void send(char ch) {
   }
 #endif
 
-  switch (ch) {
-    case ' ' :
-    case '\r' :
-    case '\n' :
-    case '\t' :
-      delimited = true;
-  }
+  if (ch < 'A')
+    delimited = true;
 
   int16_t out = (uint16_t)ch << 2 | 0x401; // stop  data  start  prev stop
   out = out ^ (out >> 1); // calculate toggles from previous bits
