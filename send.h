@@ -26,7 +26,7 @@ void send(const char* s);
   #define sendc(msg) __flash const char msgLINE[] = "msg"; send(msgLINE);
 #endif
 
-extern bool punctuation;
+extern bool delimited;
 
 void sendDec(int16_t n);
 void sendHex(uint8_t i);

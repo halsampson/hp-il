@@ -20,7 +20,7 @@ void sendInit() {
 }
 
 const int BAUD_CYCLES = ((MF_CPU + BAUD_RATE / 2)/ BAUD_RATE);
-bool punctuation;
+bool delimited;
 
 void send(char ch) {
 #ifdef RxDbit
@@ -34,7 +34,8 @@ void send(char ch) {
     case ' ' :
     case '\r' :
     case '\n' :
-      punctuation = true;
+    case '\t' :
+      delimited = true;
   }
 
   int16_t out = (uint16_t)ch << 2 | 0x401; // stop  data  start  prev stop
@@ -57,9 +58,9 @@ void send(char ch) {
 void send(const char* s) {
   if (!(PORTB & TxD)) // TODO: better test of need for OSCCAL setting
     sendInit();
-  if (!punctuation)
+  if (!delimited)
     send(' '); // no separator: provide space
-  punctuation = false;
+  delimited = false;
   while (*s) send(*s++);
 }
 

@@ -183,6 +183,7 @@ char* ilGetData(uint8_t addr) {
   static char dataBuf[MAX_RESPONSE_LEN + 1]; // to hold at least 14 character reading + CRLF + NUL
   XferFrame recvdFrame;
   int16_t dataBufIdx;
+
   do {
     dataBufIdx = 0;
     ilCmd(TAD, addr);
@@ -193,6 +194,8 @@ char* ilGetData(uint8_t addr) {
       switch (recvdFrame.frameControl) {
         case DABcc :
         case DAB_SRQ :
+          if (dataBufIdx >= MAX_RESPONSE_LEN) // long xfer -- don't echo yet
+            return dataBuf;
           sendFrame(DAB, recvdFrame.frameData); break; // echoed data requests next byte
 
         case RDY : --dataBufIdx; break; // initial response to RFC?
