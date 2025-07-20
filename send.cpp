@@ -9,13 +9,13 @@ inline void txStop() {  // init only
 }
 
 void sendInit() {
-#if MF_CPU != 16000000  
+#if MF_CPU != 16000000
   uint8_t savedOSCCAL = eeprom_read_byte(SAVED_OSCCAL_ADDR);
   if (savedOSCCAL != 0xFF) {
     OSCCAL = savedOSCCAL;
     __builtin_avr_delay_cycles(MF_CPU / 1000);  // oscillator settle?
   }
-#endif  
+#endif
   txStop();
 }
 
@@ -30,7 +30,9 @@ void send(char ch) {
   }
 #endif
 
-  if (ch < 'A')
+  if ((ch < '0' || ch > '9')
+   && (ch < 'A' || ch > 'Z')
+   && (ch < 'a' || ch > 'z'))
     delimited = true;
 
   int16_t out = (uint16_t)ch << 2 | 0x401; // stop  data  start  prev stop

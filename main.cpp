@@ -200,7 +200,7 @@ uint32_t isqrt(uint32_t num) {
 #define LOG_X_SHIFT (2 * ROOT_X_SHIFT)
 #define LOG_X_SCALE (1L << LOG_X_SHIFT)
 
-#define LOG_NUM_READINGS 7  // ~ 2 readings per sec --> ~ 1 minute report interval
+#define LOG_NUM_READINGS 7  // ~ 2 readings per sec --> ~1 minute report interval (~57 secs)
 const uint8_t NumAvg = (1 << LOG_NUM_READINGS);
 
 #define SCALE_SHIFT (64 - (3 + LOG_X_SHIFT))
@@ -269,7 +269,7 @@ void showTemperature() {
       case 10 : milliDegC = ((int64_t)RESOLUTION << SCALE_SHIFT) / tempRes; break;
       case 11 : milliDegC -= DegreesKtoC; break;
 
-      case 12 : sprintf(tempStr + 2, "%d.%03d%+dC\n", (int)(milliDegC / RESOLUTION), (int)(abs(milliDegC) % RESOLUTION), (int)(milliDegC - lastMilliDeg)); break;
+      case 12 : sprintf(tempStr + 2, "%d.%03d %+dC\n", (int)(milliDegC / RESOLUTION), (int)(abs(milliDegC) % RESOLUTION), (int)(milliDegC - lastMilliDeg)); break;
           // sprintf uses ~2000 bytes even with -u _printf_float   (atol also brings in float~!)
           // --> could output integer and insert decimal point
       case 13 : send(tempStr+2); break;
